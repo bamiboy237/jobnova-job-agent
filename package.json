@@ -1,0 +1,29 @@
+{
+  "name": "job-agent",
+  "version": "0.1.0",
+  "description": "Server-side job agent resolving LinkedIn listings and submitting ATS applications",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "resolve": "tsx src/index.ts",
+    "auth": "tsx src/auth.ts"
+  },
+  "dependencies": {
+    "@browserbasehq/sdk": "^2.2.0",
+    "@browserbasehq/stagehand": "^1.14.0",
+    "@google/genai": "^2.19.0",
+    "dotenv": "^16.4.7",
+    "openai": "^4.104.0",
+    "playwright-core": "^1.50.0",
+    "zod": "^3.24.2",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}

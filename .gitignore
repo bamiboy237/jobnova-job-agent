@@ -1,0 +1,22 @@
+# Environment & Secrets
+.env
+.env*.local
+
+# Node
+node_modules/
+dist/
+
+# Logs & Output
+*.log
+screenshots/
+output/
+.local-chrome-profile/
+.local-browser-state.json
+
+# Candidate data & resumes (per AGENTS.md)
+data/candidate/
+*.pdf
+
+# BEGIN oh-my-opencode-slim clonedeps
+.slim/clonedeps/repos/
+# END oh-my-opencode-slim clonedeps

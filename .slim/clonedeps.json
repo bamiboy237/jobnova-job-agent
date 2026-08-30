@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-08-30T13:24:19Z",
+  "dependencies": [
+    {
+      "name": "OpenAI Codex",
+      "resolvedVersion": "rust-v0.151.0",
+      "repoUrl": "https://github.com/openai/codex.git",
+      "ref": "rust-v0.151.0",
+      "commit": "78c290807ce710180111df227df3b7a4fe845452",
+      "path": ".slim/clonedeps/repos/openai__codex",
+      "packagePath": "codex-rs",
+      "reason": "Inspect agent turns, tool execution, context compaction, retries, and session state"
+    },
+    {
+      "name": "Hermes Agent",
+      "resolvedVersion": "v2026.8.27",
+      "repoUrl": "https://github.com/NousResearch/hermes-agent.git",
+      "ref": "v2026.8.27",
+      "commit": "5fc308a70719a83cccdbba4c0e39c23f5a8239d5",
+      "path": ".slim/clonedeps/repos/NousResearch__hermes-agent",
+      "packagePath": "agent",
+      "reason": "Inspect browser snapshots, CDP supervision, auth persistence, context compression, and stall handling"
+    }
+  ]
+}
