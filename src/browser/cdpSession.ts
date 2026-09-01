@@ -155,16 +155,20 @@ export function installDialogAutoDismiss(browser: AgentBrowser): void {
     await ensureReady();
     try {
       const manager = await browser.getManagerForThread(undefined as unknown as string);
-      const page = manager.getPage() as Page & { __jobnovaDialogHandlerAttached?: boolean };
-      if (page.__jobnovaDialogHandlerAttached) return;
-      page.on("dialog", async (dialog) => {
-        try {
-          await dialog.dismiss();
-        } catch {
-          // The page may dismiss the dialog before this handler runs.
-        }
+      // One context-level listener covers every page, including tabs opened
+      // later (Playwright auto-dismisses, with a crash-prone race, only when
+      // neither a page nor a context dialog listener exists).
+      const context = manager.getPage().context() as ReturnType<Page["context"]> & { __jobnovaDialogHandlerAttached?: boolean };
+      if (context.__jobnovaDialogHandlerAttached) return;
+      context.on("dialog", (dialog) => {
+        // Accepting beforeunload lets navigation proceed (Playwright's own
+        // no-listener behavior); everything else is dismissed.
+        const close = dialog.type() === "beforeunload" ? dialog.accept() : dialog.dismiss();
+        close.catch(() => {
+          // The dialog may already be gone; never let this reject.
+        });
       });
-      page.__jobnovaDialogHandlerAttached = true;
+      context.__jobnovaDialogHandlerAttached = true;
     } catch {
       // Dialog handling must not make an otherwise ready browser fail.
     }
