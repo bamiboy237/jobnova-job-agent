@@ -1,376 +1,393 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { z } from "zod";
-import { Stagehand } from "@browserbasehq/stagehand";
-import { type Page } from "playwright-core";
-import { getStagehandModelConfig } from "../llm/stagehandModel.js";
+import { randomUUID } from "node:crypto";
+import type { AgentBrowser } from "@mastra/agent-browser";
 import {
   ResolverInputSchema,
   type ResolverInput,
+  type ResolverMetrics,
   type ResolverResult,
 } from "../types.js";
+import { getResolverModelConfig } from "../mastra/model.js";
+import { createResolverRuntime, ResolverAgentOutputSchema } from "../mastra/resolverAgent.js";
+import { compactSupersededSnapshots } from "../mastra/compactSnapshots.js";
+import { collectEnvSecrets, safeError } from "./browserSafety.js";
 import { validateDestination } from "./validateDestination.js";
-import { resolveCompanySiteFallback } from "./fallbackResolver.js";
-import { checkLinkedInAuthWall, safeError } from "./browserSafety.js";
-import { loadLocalBrowserCookies, LOCAL_CHROME_PATH, saveLocalBrowserState } from "../browser/session.js";
-import { readLinkedInListingSignals } from "./pageSignals.js";
 
-const LinkedInIdentitySchema = z.object({
-  company: z.string().min(1, "Company cannot be empty").describe("The hiring company offering the job"),
-  jobTitle: z.string().min(1, "Job title cannot be empty").describe("The job title or role on the listing"),
-  location: z.string().describe("Visible job location (city, state, country, or remote) or empty string"),
-});
+const MAX_AGENT_STEPS = 16;
+const PLACEHOLDER_IDENTITY = /^(unknown|n\/?a|none|not found|not available|tbd)$/i;
 
-const DestinationIdentitySchema = z.object({
-  pageType: z
-    .enum(["job", "careers", "homepage", "other"])
-    .describe("Set to 'job' ONLY if this page is dedicated to one single job opening"),
-  companyMatches: z.boolean().describe("True only if this page is for the expected hiring company"),
-  jobMatches: z.boolean().describe("True only if this page is for the exact expected job title/role (distinguishing seniority and internship terms)"),
-  companyEvidence: z.string().describe("Direct quote of visible evidence matching the company on the page"),
-  jobEvidence: z.string().describe("Direct quote of visible evidence matching the exact job title/role on the page"),
-});
-
-export function shouldEnterCompanySiteFallback(input: {
-  directDestinationUrl: string;
-  linkedinUrl: string;
-  isAuthGate: boolean;
-  validationSucceeded: boolean;
-}): boolean {
-  if (input.validationSucceeded) return false;
-  if (input.isAuthGate || !input.directDestinationUrl) return true;
-  try {
-    const destination = new URL(input.directDestinationUrl);
-    const linkedIn = destination.hostname === "linkedin.com" || destination.hostname.endsWith(".linkedin.com");
-    return linkedIn || input.directDestinationUrl === input.linkedinUrl || !input.validationSucceeded;
-  } catch {
-    return true;
-  }
-}
-
-/**
- * Safely captures a screenshot and returns the filepath only if successfully written.
- */
-async function captureSafeScreenshot(page: Page, targetPath: string): Promise<string | null> {
-  try {
-    await page.screenshot({ path: targetPath, timeout: 5000 });
-    const stat = await fs.stat(targetPath);
-    if (stat.size > 0) {
-      return targetPath;
-    }
-  } catch {
-    // Return null if screenshot could not be captured
-  }
-  return null;
-}
-
-/**
- * Resolves a job URL from a LinkedIn job posting using direct apply or company-site fallback.
- */
 export async function resolveDirectLinkedInJob(rawInput: ResolverInput): Promise<ResolverResult> {
-  const startTime = Date.now();
-  const trace: string[] = [];
-  const screenshots: string[] = [];
-
-  // 1. Strict deterministic input validation before creating browser session
-  const parseResult = ResolverInputSchema.safeParse(rawInput);
-  if (!parseResult.success) {
-    const errorMsg = parseResult.error.errors.map((e) => e.message).join("; ");
+  const startedAt = Date.now();
+  const parsedInput = ResolverInputSchema.safeParse(rawInput);
+  if (!parsedInput.success) {
     return {
       success: false,
       linkedinUrl: rawInput?.linkedinUrl || "",
-      error: errorMsg,
-      runtimeMs: Date.now() - startTime,
-      trace: ["Input validation failed: invalid LinkedIn job listing URL"],
+      error: parsedInput.error.errors.map((error) => error.message).join("; "),
+      runtimeMs: Date.now() - startedAt,
+      trace: ["Input validation failed"],
     };
   }
 
-  const { linkedinUrl } = parseResult.data;
-
-  const bbApiKey = process.env.BROWSERBASE_API_KEY;
-  const bbProjectId = process.env.BROWSERBASE_PROJECT_ID;
-  const bbContextId = process.env.BROWSERBASE_CONTEXT_ID;
-  const useLocalBrowser = process.env.BROWSER_PROVIDER === "local";
-
-  if (!useLocalBrowser && (!bbApiKey || !bbProjectId)) {
-    return {
-      success: false,
-      linkedinUrl,
-      error: "Missing BROWSERBASE_API_KEY or BROWSERBASE_PROJECT_ID in environment",
-      runtimeMs: Date.now() - startTime,
-      trace: ["Environment check failed: missing Browserbase credentials"],
-    };
-  }
-
-  let modelConfig;
+  const { linkedinUrl } = parsedInput.data;
+  let modelConfig: ReturnType<typeof getResolverModelConfig>;
   try {
-    modelConfig = getStagehandModelConfig();
+    modelConfig = getResolverModelConfig();
   } catch (error) {
-    return {
-      success: false,
-      linkedinUrl,
-      error: safeError(error),
-      runtimeMs: Date.now() - startTime,
-      trace: ["Environment check failed: invalid LLM configuration"],
-    };
+    return failure(linkedinUrl, startedAt, safeError(error, collectEnvSecrets()), ["Environment check failed"]);
   }
 
-  const screenshotsDir = path.resolve(process.cwd(), "screenshots");
-  await fs.mkdir(screenshotsDir, { recursive: true });
-
-  let stagehand: Stagehand | undefined;
+  const trace: string[] = [`Started Mastra resolver agent with ${modelConfig.label}`];
+  const candidates: string[] = [];
+  const observedCandidates: Array<{ url: string; observedAt: number }> = [];
+  const screenshots: string[] = [];
+  const repeatedMutations = new Map<string, number>();
+  const toolStarts = new Map<string, number[]>();
+  let deterministicToolDurationMs = 0;
+  let stagehandModelCalls = 0;
+  let linkedInAuthBlocked = false;
+  const runId = randomUUID();
+  const { mastra, browsers } = createResolverRuntime(modelConfig);
+  let browserSetupMs = 0;
+  let agentStartedAt = 0;
+  let agentFinishedAt = 0;
+  let outerModelCalls = 0;
 
   try {
-    const localCookies = useLocalBrowser ? await loadLocalBrowserCookies() : undefined;
-    trace.push(`Connecting to ${useLocalBrowser ? "local Chrome" : "Browserbase remote browser"} with Stagehand and ${modelConfig.label}`);
+    const browserSetupStartedAt = Date.now();
+    await browsers.actionBrowser.ensureReady();
+    browserSetupMs = Date.now() - browserSetupStartedAt;
 
-    stagehand = new Stagehand({
-      env: useLocalBrowser ? "LOCAL" : "BROWSERBASE",
-      apiKey: useLocalBrowser ? undefined : bbApiKey,
-      projectId: useLocalBrowser ? undefined : bbProjectId,
-      ...modelConfig.options,
-      logger: () => {},
-      localBrowserLaunchOptions: useLocalBrowser
-        ? {
-            executablePath: LOCAL_CHROME_PATH,
-            headless: false,
-            viewport: { width: 1440, height: 1000 },
-            cookies: localCookies,
-          }
-        : undefined,
-      browserbaseSessionCreateParams: useLocalBrowser ? undefined : {
-        browserSettings: bbContextId
-          ? {
-              context: {
-                id: bbContextId,
-                persist: true,
-              },
+    const agent = mastra.getAgentById("linkedin-resolver");
+    agentStartedAt = Date.now();
+    const navigationOutput = await agent.generate(
+      `Navigate from this LinkedIn listing to the matching job-specific external page: ${linkedinUrl}. Stop after a fresh snapshot confirms the best candidate; do not keep exploring after the exact job is visible.`,
+      {
+        runId,
+        memory: {
+          resource: linkedinUrl,
+          thread: runId,
+        },
+        maxSteps: MAX_AGENT_STEPS,
+        providerOptions: modelConfig.agentProviderOptions,
+        prepareStep: ({ messages }) => ({ messages: compactSupersededSnapshots(messages) }),
+        hooks: {
+          beforeToolCall: ({ toolName, input }) => {
+            const starts = toolStarts.get(toolName) || [];
+            starts.push(Date.now());
+            toolStarts.set(toolName, starts);
+            if (toolName.startsWith("stagehand_")) stagehandModelCalls += 1;
+
+            if (toolName !== "browser_click" && toolName !== "browser_goto") return;
+            const key = `${toolName}:${JSON.stringify(input)}`;
+            const count = (repeatedMutations.get(key) || 0) + 1;
+            repeatedMutations.set(key, count);
+            if (count >= 3) {
+              return {
+                proceed: false as const,
+                output: { success: false, error: "Repeated browser mutation blocked; inspect current state and choose a different action." },
+              };
             }
-          : undefined,
+          },
+          afterToolCall: async ({ toolName, output: toolOutput, error }) => {
+            const started = toolStarts.get(toolName)?.pop();
+            if (started !== undefined && !toolName.startsWith("stagehand_")) {
+              deterministicToolDurationMs += Date.now() - started;
+            }
+            if (error) {
+              trace.push(`${toolName} failed`);
+              return;
+            }
+            const url = readOutputUrl(toolOutput);
+            if (toolName.startsWith("browser_")) {
+              for (const observedUrl of readObservedUrls(toolOutput)) {
+                if (isLinkedInAuthUrl(observedUrl)) linkedInAuthBlocked = true;
+                if (isExternalHttpsUrl(observedUrl)) {
+                  candidates.push(observedUrl);
+                  observedCandidates.push({ url: observedUrl, observedAt: Date.now() });
+                }
+              }
+            }
+            if (toolName === "browser_goto" && url?.includes("linkedin.com/jobs/view/") && screenshots.length === 0) {
+              const screenshot = await captureScreenshot(browsers.actionBrowser, runId, "linkedin");
+              if (screenshot) screenshots.push(screenshot);
+            }
+            trace.push(toolTrace(toolName, url));
+          },
+        },
+      },
+    );
+    outerModelCalls = navigationOutput.steps.length;
+
+    const output = await agent.generate(
+      "Return the final resolver evidence from this thread. Use only the LinkedIn identity and destination page evidence already observed. Do not invent or propose a URL that the browser did not visit.",
+      {
+        runId: `${runId}-final`,
+        memory: {
+          resource: linkedinUrl,
+          thread: runId,
+        },
+        maxSteps: 1,
+        toolChoice: "none",
+        providerOptions: modelConfig.agentProviderOptions,
+        structuredOutput: {
+          schema: ResolverAgentOutputSchema,
+          jsonPromptInjection: "auto",
+          errorStrategy: "strict",
+        },
+        prepareStep: ({ messages }) => ({ messages: compactSupersededSnapshots(messages) }),
+      },
+    );
+    agentFinishedAt = Date.now();
+    outerModelCalls += output.steps.length;
+
+    const evidence = ResolverAgentOutputSchema.parse(output.object);
+    const company = cleanIdentity(evidence.company);
+    const jobTitle = cleanIdentity(evidence.jobTitle);
+    const destinationScreenshot = await captureScreenshot(browsers.actionBrowser, runId, "destination");
+    if (destinationScreenshot) screenshots.push(destinationScreenshot);
+    const candidateUrl = bestCandidate(evidence.candidateUrl, candidates);
+    const metrics = buildResolverMetrics({
+      browserSetupMs,
+      agentStartedAt,
+      agentFinishedAt,
+      completedAt: Date.now(),
+      deterministicToolDurationMs,
+      modelCalls: outerModelCalls + stagehandModelCalls,
+      observedCandidates,
+      finalCandidateUrl: candidateUrl,
+    });
+
+    if (!company || !jobTitle) {
+      return failure(
+        linkedinUrl,
+        startedAt,
+        evidence.blocker || "LinkedIn listing did not expose a valid company and job title",
+        trace,
+        { company, jobTitle, externalJobUrl: candidateUrl, screenshots, metrics },
+      );
+    }
+
+    if (!candidateUrl) {
+      return failure(
+        linkedinUrl,
+        startedAt,
+        evidence.blocker || "No job-specific external destination could be verified",
+        trace,
+        { company, jobTitle, screenshots, metrics },
+      );
+    }
+
+    const validation = validateDestination({
+      company,
+      jobTitle,
+      destinationUrl: candidateUrl,
+      semanticEvaluation: {
+        pageType: evidence.pageType,
+        companyMatches: evidence.companyMatches,
+        jobMatches: evidence.jobMatches,
+        companyEvidence: evidence.companyEvidence,
+        jobEvidence: evidence.jobEvidence,
       },
     });
 
-    await stagehand.init();
-    const page = stagehand.page;
-
-    trace.push("Opened LinkedIn listing");
-    await page.goto(linkedinUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.locator("body").waitFor({ state: "attached", timeout: 8000 }).catch(() => {});
-    await page.locator("h1").first().waitFor({ state: "attached", timeout: 8000 }).catch(() => {});
-
-    // Save LinkedIn page screenshot
-    const linkedinScreenshotPath = path.join(screenshotsDir, `linkedin_${Date.now()}.png`);
-    const savedLinkedinScreenshot = await captureSafeScreenshot(page, linkedinScreenshotPath);
-    if (savedLinkedinScreenshot) {
-      screenshots.push(savedLinkedinScreenshot);
-    }
-
-    // Check for initial auth wall
-    const isBlocked = await checkLinkedInAuthWall(page);
-    if (isBlocked) {
-      trace.push("LinkedIn presented an authentication barrier");
-      return {
-        success: false,
+    if (!validation.isValid) {
+      return failure(
         linkedinUrl,
-        error: "LinkedIn authentication or verification barrier encountered (sign-in required)",
-        runtimeMs: Date.now() - startTime,
-        trace,
-        screenshots,
-      };
+        startedAt,
+        evidence.blocker || validation.reason || "Destination validation was uncertain",
+        [...trace, "Preserved the strongest candidate after validation did not pass"],
+        { company, jobTitle, externalJobUrl: candidateUrl, screenshots, metrics },
+      );
     }
-
-    const listingSignals = await readLinkedInListingSignals(page);
-    let identity: z.infer<typeof LinkedInIdentitySchema> = listingSignals;
-    if (!identity.company || !identity.jobTitle) {
-      trace.push(`Structured listing data was incomplete; extracting identity via Stagehand with ${modelConfig.label}`);
-      try {
-        identity = await stagehand.extract({
-          instruction: "Extract the exact hiring company name, job title, and visible location from this LinkedIn job listing.",
-          schema: LinkedInIdentitySchema,
-        });
-      } catch (err: unknown) {
-        trace.push(`Stagehand identity extraction error: ${safeError(err, [bbApiKey || "", bbContextId || "", modelConfig.secret])}`);
-        return {
-          success: false,
-          linkedinUrl,
-          error: "Could not identify required company name or job title on listing using Stagehand",
-          runtimeMs: Date.now() - startTime,
-          trace,
-          screenshots,
-        };
-      }
-    }
-
-    const company = identity?.company?.trim();
-    const jobTitle = identity?.jobTitle?.trim();
-    const location = identity?.location?.trim();
-
-    if (!company || !jobTitle) {
-      const missingField = !company && !jobTitle ? "company name and job title" : !company ? "company name" : "job title";
-      trace.push(`Failed to extract ${missingField} from LinkedIn listing`);
-      return {
-        success: false,
-        company: company || undefined,
-        jobTitle: jobTitle || undefined,
-        linkedinUrl,
-        error: `Could not identify required ${missingField} on listing`,
-        runtimeMs: Date.now() - startTime,
-        trace,
-        screenshots,
-      };
-    }
-
-    trace.push(`Identified company: "${company}" and job: "${jobTitle}"`);
-
-    // Stagehand Operation 2: Try Direct Apply Discovery and Activation
-    trace.push("Discovering direct external Apply control via Stagehand");
-    let destinationPage: Page = page;
-    let externalJobUrl = "";
-    let directDestinationAuthGate = false;
-
-    try {
-      const popupCapture: { page: Page | null } = { page: null };
-      if (listingSignals.externalApplyUrl) {
-        trace.push("Found direct external Apply URL in LinkedIn page data");
-        await page.goto(listingSignals.externalApplyUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-      } else if (!listingSignals.easyApplyVisible) {
-        const context = page.context();
-        const recordPopup = (newPage: Page) => {
-          popupCapture.page ??= newPage;
-        };
-        context.on("page", recordPopup);
-        try {
-          await stagehand.act({
-            action: "Click the direct external apply button (such as 'Apply on company website' or external 'Apply'). Do NOT click 'Easy Apply'.",
-          });
-        } finally {
-          context.off("page", recordPopup);
-        }
-      } else {
-        trace.push("LinkedIn exposes Easy Apply but no direct external Apply URL");
-      }
-
-      const popup = popupCapture.page;
-      if (popup) {
-        await popup.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
-        const popupUrl = popup.url();
-        if (popupUrl) {
-          await page.goto(popupUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-        }
-        await popup.close().catch(() => {});
-        destinationPage = page;
-      }
-
-      await destinationPage.locator("body").waitFor({ state: "attached", timeout: 8000 }).catch(() => {});
-      externalJobUrl = destinationPage.url();
-
-      const isDestAuthGate = await checkLinkedInAuthWall(destinationPage);
-      directDestinationAuthGate = isDestAuthGate;
-      if (
-        !isDestAuthGate &&
-        externalJobUrl &&
-        externalJobUrl !== linkedinUrl &&
-        !externalJobUrl.includes("linkedin.com")
-      ) {
-        // Validate direct destination
-        trace.push(`Followed direct external destination: ${externalJobUrl}`);
-
-        trace.push(`Validating direct destination identity via Stagehand with ${modelConfig.label}`);
-        const semanticEvaluation = await stagehand.extract({
-          instruction: `Determine whether this destination page is for company "${company}" and the exact role "${jobTitle}". Set pageType to "job" only if this is a dedicated single-job posting. Return direct quotes from the visible page as companyEvidence and jobEvidence.`,
-          schema: DestinationIdentitySchema,
-        });
-
-        const validation = validateDestination({
-          company,
-          jobTitle,
-          destinationUrl: externalJobUrl,
-          semanticEvaluation,
-        });
-
-        if (validation.isValid) {
-          const destScreenshotPath = path.join(screenshotsDir, `destination_${Date.now()}.png`);
-          const savedDestScreenshot = await captureSafeScreenshot(destinationPage, destScreenshotPath);
-          if (savedDestScreenshot) screenshots.push(savedDestScreenshot);
-          trace.push(
-            `Validated direct destination matches company and job (Evidence: ${validation.evidence?.companyEvidence || "verified"} | ${validation.evidence?.jobEvidence || "verified"})`
-          );
-
-          return {
-            success: true,
-            company,
-            jobTitle,
-            linkedinUrl,
-            externalJobUrl,
-            runtimeMs: Date.now() - startTime,
-            trace,
-            screenshots,
-          };
-        }
-      }
-    } catch (err: unknown) {
-      trace.push(`Direct Apply attempt note: ${safeError(err, [bbApiKey || "", bbContextId || "", modelConfig.secret])}`);
-    }
-
-    if (!shouldEnterCompanySiteFallback({
-      directDestinationUrl: externalJobUrl,
-      linkedinUrl,
-      isAuthGate: directDestinationAuthGate,
-      validationSucceeded: false,
-    })) {
-      throw new Error("Direct destination was neither accepted nor eligible for fallback");
-    }
-
-    trace.push("Direct external apply unavailable or unvalidated; entering company-site fallback");
-    if (page.url() !== linkedinUrl) {
-      await page.goto(linkedinUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await page.locator("body").waitFor({ state: "attached", timeout: 8000 }).catch(() => {});
-    }
-    if (await checkLinkedInAuthWall(page)) {
-      return {
-        success: false,
-        company,
-        jobTitle,
-        linkedinUrl,
-        error: "LinkedIn authentication or verification barrier encountered before company-site fallback",
-        runtimeMs: Date.now() - startTime,
-        trace: [...trace, "LinkedIn presented an authentication barrier before fallback"],
-        screenshots,
-      };
-    }
-
-    return await resolveCompanySiteFallback({
-      stagehand,
-      company,
-      jobTitle,
-      location,
-      companyProfileUrl: listingSignals.companyProfileUrl,
-      linkedinUrl,
-      trace,
-      screenshots,
-      screenshotsDir,
-      startTime,
-      secrets: [bbApiKey || "", bbContextId || "", modelConfig.secret],
-    });
-  } catch (err: unknown) {
-    const sanitizedError = safeError(err, [bbApiKey || "", bbContextId || "", modelConfig?.secret || ""]);
-
-    trace.push(`Execution error: ${sanitizedError}`);
 
     return {
-      success: false,
+      success: true,
+      company,
+      jobTitle,
       linkedinUrl,
-      error: sanitizedError,
-      runtimeMs: Date.now() - startTime,
-      trace,
+      externalJobUrl: candidateUrl,
+      runtimeMs: Date.now() - startedAt,
+      trace: [...trace, "Validated destination against visible company and job evidence"],
       screenshots,
+      metrics,
     };
+  } catch (error) {
+    if (!agentFinishedAt && agentStartedAt) agentFinishedAt = Date.now();
+    const failureScreenshot = await captureScreenshot(browsers.actionBrowser, runId, "failure");
+    if (failureScreenshot) screenshots.push(failureScreenshot);
+    const finalCandidateUrl = candidates.at(-1);
+    const metrics = buildResolverMetrics({
+      browserSetupMs,
+      agentStartedAt,
+      agentFinishedAt,
+      completedAt: Date.now(),
+      deterministicToolDurationMs,
+      modelCalls: outerModelCalls + stagehandModelCalls,
+      observedCandidates,
+      finalCandidateUrl,
+    });
+    return failure(
+      linkedinUrl,
+      startedAt,
+      linkedInAuthBlocked
+        ? "LinkedIn authentication is required in the active browser profile"
+        : safeError(error, [...collectEnvSecrets(), ...modelConfig.secrets]),
+      [...trace, "Mastra resolver agent stopped"],
+      { externalJobUrl: finalCandidateUrl, screenshots, metrics },
+    );
   } finally {
-    if (stagehand) {
-      if (useLocalBrowser) {
-        await saveLocalBrowserState(stagehand.context).catch(() => {});
-      }
-      await stagehand.close().catch(() => {});
-    }
+    await browsers.close();
   }
+}
+
+export function buildResolverMetrics(input: {
+  browserSetupMs: number;
+  agentStartedAt: number;
+  agentFinishedAt: number;
+  completedAt: number;
+  deterministicToolDurationMs: number;
+  modelCalls: number;
+  observedCandidates: Array<{ url: string; observedAt: number }>;
+  finalCandidateUrl?: string;
+}): ResolverMetrics {
+  const agentDurationMs = input.agentStartedAt && input.agentFinishedAt
+    ? Math.max(0, input.agentFinishedAt - input.agentStartedAt)
+    : 0;
+  const firstExternalAt = input.observedCandidates[0]?.observedAt;
+  const normalizedFinal = input.finalCandidateUrl ? normalizeUrl(input.finalCandidateUrl) : undefined;
+  const finalCandidateAt = normalizedFinal
+    ? input.observedCandidates.find((candidate) => normalizeUrl(candidate.url) === normalizedFinal)?.observedAt
+    : undefined;
+  const linkedinInspectionEnd = firstExternalAt || input.agentFinishedAt || input.completedAt;
+  const linkedinInspectionMs = input.agentStartedAt
+    ? Math.max(0, linkedinInspectionEnd - input.agentStartedAt)
+    : 0;
+  const companyCareersNavigationMs = firstExternalAt && finalCandidateAt
+    ? Math.max(0, finalCandidateAt - firstExternalAt)
+    : 0;
+  const finalValidationStartedAt = finalCandidateAt || input.agentFinishedAt || input.completedAt;
+
+  return {
+    modelCalls: input.modelCalls,
+    modelDurationMs: Math.max(0, agentDurationMs - input.deterministicToolDurationMs),
+    phases: {
+      browserSetupMs: input.browserSetupMs,
+      linkedinInspectionMs,
+      companyCareersNavigationMs,
+      finalValidationMs: Math.max(0, input.completedAt - finalValidationStartedAt),
+    },
+  };
+}
+
+export function cleanIdentity(value: string): string | undefined {
+  const cleaned = value.trim();
+  return cleaned && !PLACEHOLDER_IDENTITY.test(cleaned) ? cleaned : undefined;
+}
+
+export function bestCandidate(modelCandidate: string, observedCandidates: string[]): string | undefined {
+  const observed = observedCandidates.filter(isExternalHttpsUrl);
+  const cleaned = normalizeUrl(modelCandidate);
+  if (!cleaned) return undefined;
+  return [...observed].reverse().find((candidate) => normalizeUrl(candidate) === cleaned);
+}
+
+function isExternalHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname !== "linkedin.com" && !url.hostname.endsWith(".linkedin.com");
+  } catch {
+    return false;
+  }
+}
+
+export function isLinkedInAuthUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.hostname !== "linkedin.com" && !url.hostname.endsWith(".linkedin.com")) return false;
+    return [
+      "/authwall",
+      "/login",
+      "/signup",
+      "/checkpoint",
+      "/cold-join",
+      "/challenge",
+      "/verification",
+    ].some((path) => url.pathname.toLowerCase().includes(path));
+  } catch {
+    return false;
+  }
+}
+
+function readOutputUrl(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || !("url" in value)) return undefined;
+  return typeof value.url === "string" ? value.url : undefined;
+}
+
+export function readObservedUrls(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value)) return value.flatMap(readObservedUrls);
+
+  const urls: string[] = [];
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (key === "url" && typeof nestedValue === "string") urls.push(nestedValue);
+    if (key === "tabs" && Array.isArray(nestedValue)) urls.push(...readObservedUrls(nestedValue));
+  }
+  return urls;
+}
+
+function normalizeUrl(value: string): string | undefined {
+  try {
+    return new URL(value.trim()).href;
+  } catch {
+    return undefined;
+  }
+}
+
+function toolTrace(toolName: string, url?: string): string {
+  if (toolName === "browser_goto") return url ? `Navigated to ${new URL(url).hostname}` : "Navigated browser";
+  if (toolName === "browser_snapshot") return "Inspected accessibility snapshot";
+  if (toolName === "browser_click") return "Performed one deterministic click";
+  if (toolName === "browser_tabs") return "Inspected browser tabs";
+  if (toolName === "stagehand_observe") return "Observed available page actions";
+  if (toolName === "stagehand_extract") return "Extracted unresolved page evidence";
+  return `Used ${toolName}`;
+}
+
+async function captureScreenshot(browser: AgentBrowser, runId: string, label: string): Promise<string | undefined> {
+  try {
+    const screenshot = await browser.screenshot({ fullPage: false });
+    if (!("base64" in screenshot) || typeof screenshot.base64 !== "string") return undefined;
+    const directory = path.resolve(process.cwd(), "screenshots");
+    const target = path.join(directory, `resolver_${runId}_${label}.png`);
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(target, Buffer.from(screenshot.base64, "base64"));
+    return target;
+  } catch {
+    return undefined;
+  }
+}
+
+function failure(
+  linkedinUrl: string,
+  startedAt: number,
+  error: string,
+  trace: string[],
+  details: {
+    company?: string;
+    jobTitle?: string;
+    externalJobUrl?: string;
+    screenshots?: string[];
+    metrics?: ResolverMetrics;
+  } = {},
+): ResolverResult {
+  return {
+    success: false,
+    linkedinUrl,
+    error,
+    runtimeMs: Date.now() - startedAt,
+    trace,
+    ...details,
+  };
 }

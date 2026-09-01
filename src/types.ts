@@ -2,14 +2,14 @@ import { z } from "zod";
 
 /**
  * Validates that the input is a valid HTTPS LinkedIn job listing URL.
- * Accepts formats like https://www.linkedin.com/jobs/view/<job_id>
+ * Accepts LinkedIn job URLs from regional, email, and search surfaces.
  */
 export function isValidLinkedInJobUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     const isHttps = parsed.protocol === "https:";
-    const isExactHost = parsed.hostname === "linkedin.com" || parsed.hostname === "www.linkedin.com";
-    const isExactJobPath = /^\/jobs\/view\/[0-9]+\/?$/i.test(parsed.pathname);
+    const isExactHost = parsed.hostname === "linkedin.com" || parsed.hostname.endsWith(".linkedin.com");
+    const isExactJobPath = /^(?:\/comm)?\/jobs\/view\/(?:[^/]*-)?(\d+)\/?$/.test(parsed.pathname);
 
     return isHttps && isExactHost && isExactJobPath;
   } catch {
@@ -28,6 +28,26 @@ export const ResolverInputSchema = z.object({
 
 export type ResolverInput = z.infer<typeof ResolverInputSchema>;
 
+export interface ResolverPhaseTimings {
+  browserSetupMs: number;
+  linkedinInspectionMs: number;
+  companyCareersNavigationMs: number;
+  finalValidationMs: number;
+}
+
+export const ResolverMetricsSchema = z.object({
+  modelCalls: z.number().int().nonnegative(),
+  modelDurationMs: z.number().nonnegative(),
+  phases: z.object({
+    browserSetupMs: z.number().nonnegative(),
+    linkedinInspectionMs: z.number().nonnegative(),
+    companyCareersNavigationMs: z.number().nonnegative(),
+    finalValidationMs: z.number().nonnegative(),
+  }),
+});
+
+export type ResolverMetrics = z.infer<typeof ResolverMetricsSchema>;
+
 export const ResolverSuccessResultSchema = z.object({
   success: z.literal(true),
   company: z.string().min(1, "Company name cannot be empty"),
@@ -37,6 +57,7 @@ export const ResolverSuccessResultSchema = z.object({
   runtimeMs: z.number(),
   trace: z.array(z.string()),
   screenshots: z.array(z.string()).optional(),
+  metrics: ResolverMetricsSchema.optional(),
 });
 
 export type ResolverSuccessResult = z.infer<typeof ResolverSuccessResultSchema>;
@@ -51,6 +72,7 @@ export const ResolverFailureResultSchema = z.object({
   runtimeMs: z.number(),
   trace: z.array(z.string()),
   screenshots: z.array(z.string()).optional(),
+  metrics: ResolverMetricsSchema.optional(),
 });
 
 export type ResolverFailureResult = z.infer<typeof ResolverFailureResultSchema>;

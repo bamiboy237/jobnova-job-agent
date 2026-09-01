@@ -1,7 +1,15 @@
-import { type Page } from "playwright-core";
+export function collectEnvSecrets(): string[] {
+  return [
+    process.env.OPENAI_API_KEY,
+    process.env.GEMINI_API_KEY,
+    process.env.DEEPSEEK_API_KEY,
+    process.env.BROWSERBASE_API_KEY,
+    process.env.MASTRA_DATABASE_AUTH_TOKEN,
+  ].filter((secret): secret is string => Boolean(secret));
+}
 
-export function safeError(error: unknown, secrets: string[] = []): string {
-  let message = error instanceof Error ? error.message : String(error);
+export function redactSensitiveText(value: string, secrets: string[] = []): string {
+  let message = value;
   for (const secret of secrets) {
     if (secret) message = message.replaceAll(secret, "***");
   }
@@ -10,35 +18,6 @@ export function safeError(error: unknown, secrets: string[] = []): string {
     .replace(/https:\/\/www\.browserbase\.com\/sessions\/[^\s]+/g, "https://www.browserbase.com/sessions/***");
 }
 
-export async function checkLinkedInAuthWall(page: Page): Promise<boolean> {
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(page.url());
-  } catch {
-    return false;
-  }
-
-  if (parsedUrl.hostname !== "linkedin.com" && !parsedUrl.hostname.endsWith(".linkedin.com")) {
-    return false;
-  }
-
-  const url = parsedUrl.href.toLowerCase();
-  if (
-    url.includes("/authwall") ||
-    url.includes("/login") ||
-    url.includes("/checkpoint") ||
-    url.includes("/signup") ||
-    url.includes("/cold-join") ||
-    url.includes("/challenge") ||
-    url.includes("/verification")
-  ) {
-    return true;
-  }
-
-  return page.evaluate(() => (
-    document.querySelector(".authwall-join-form") !== null ||
-    document.querySelector("form.login__form") !== null ||
-    document.querySelector("form[action*='cold-join']") !== null ||
-    (document.body.innerText.includes("Join LinkedIn") && !document.querySelector("h1"))
-  ));
+export function safeError(error: unknown, secrets: string[] = []): string {
+  return redactSensitiveText(error instanceof Error ? error.message : String(error), secrets);
 }

@@ -12,11 +12,16 @@ screenshots/
 output/
 .local-chrome-profile/
 .local-browser-state.json
+mastra.db*
 
 # Candidate data & resumes (per AGENTS.md)
-data/candidate/
+data/candidate/*
+!data/candidate/README.md
 *.pdf
 
 # BEGIN oh-my-opencode-slim clonedeps
 .slim/clonedeps/repos/
 # END oh-my-opencode-slim clonedeps
+
+# Deepwork session state
+.slim/deepwork/

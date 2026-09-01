@@ -89,8 +89,9 @@ Job-fit scoring is optional and should only be added after the required resolver
 
 - TypeScript
 - Mastra
-- OpenAI `gpt-5.6-luna` with high reasoning
-- Gemini 3.7 Flash as an explicit fallback
+- OpenAI `gpt-5.6-luna` with medium reasoning
+- Gemini 3.6 Flash with dynamic thinking as an explicit fallback
+- DeepSeek V4 Flash Vision as an experimental fallback
 - Browserbase remote Chromium
 - Stagehand
 - `agent-browser`
@@ -108,8 +109,11 @@ Use **Stagehand** where the page structure is uncertain:
 - company careers navigation;
 - unfamiliar page validation.
 
+Stagehand can inspect and propose actions. It does not execute page mutations.
+
 Use **`agent-browser`** where precise interaction matters:
 
+- navigation and accessibility snapshots;
 - form inspection;
 - click/fill/select;
 - resume upload;
@@ -117,13 +121,15 @@ Use **`agent-browser`** where precise interaction matters:
 - submission;
 - screenshots.
 
-Do not have Stagehand and `agent-browser` control the same page at the same time.
+Both Mastra browser providers connect to one CDP session. Call them sequentially. Stagehand interprets the current page, `agent-browser` executes one exact action, and `agent-browser` captures a fresh snapshot before Stagehand interprets the next state.
 
 ### Remote browser
 
 Browserbase hosts the browser used by the deployed product.
 
 The agent should operate on remote Chromium, not depend on the user's computer remaining open.
+
+Local development uses the same CDP-based browser-agent flow against a local Chrome profile. Production changes only the CDP session source to Browserbase.
 
 Use a persistent Browserbase context when authenticated state is needed. Keep Browserbase credentials and CDP connection URLs out of model prompts and user-visible output.
 
@@ -358,6 +364,8 @@ Those belong inside the product capability that requires them.
 
 **Blocked by:** Ticket 1.
 
+**Status:** Active. Scope expanded by explicit user direction on 2026-08-31: build one general autonomous application agent first, then use the provided Lever application as one live proof. See `task.md`.
+
 **Delivers:** Given the provided Lever application URL, candidate profile, and approved resume, complete the application, submit it, and verify the result.
 
 **Acceptance criteria:**
@@ -398,17 +406,17 @@ Those belong inside the product capability that requires them.
 
 ---
 
-### Ticket 5 — Evaluate the resolver on 20 jobs
+### Ticket 5 — Evaluate the resolver on 20 verified jobs
 
 **Blocked by:** Ticket 2.
 
-**Status:** Active.
+**Status:** Pending after active Ticket 3.
 
-**Delivers:** The required 20-case resolver evaluation and success-rate report.
+**Delivers:** The project brief's required 20-case resolver evaluation and success-rate report.
 
 **Acceptance criteria:**
 
-- Select and freeze 20 LinkedIn job URLs.
+- Select 20 cases from the frozen, independently labelled LinkedIn job set.
 - Label the expected destination for each before running the resolver.
 - Run the resolver across all 20 cases.
 - Record expected URL, resolved URL, outcome, runtime, and notes.

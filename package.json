@@ -8,20 +8,27 @@
     "build": "tsc",
     "test": "vitest run",
     "resolve": "tsx src/index.ts",
-    "auth": "tsx src/auth.ts"
+    "auth": "tsx src/auth.ts",
+    "apply:chat": "tsx src/apply/chatCli.ts",
+    "apply:test": "tsx src/apply/cli.ts",
+    "apply:test:factual": "tsx src/apply/cli.ts --factual",
+    "apply:submit": "tsx src/apply/cli.ts --submit"
   },
   "dependencies": {
     "@browserbasehq/sdk": "^2.2.0",
-    "@browserbasehq/stagehand": "^1.14.0",
-    "@google/genai": "^2.19.0",
+    "@mastra/agent-browser": "^0.5.1",
+    "@mastra/core": "^1.63.2",
+    "@mastra/libsql": "^1.22.2",
+    "@mastra/memory": "^1.28.1",
+    "@mastra/stagehand": "^0.3.3",
     "dotenv": "^16.4.7",
-    "openai": "^4.104.0",
+    "pdfkit": "^0.20.2",
     "playwright-core": "^1.50.0",
-    "zod": "^3.24.2",
-    "zod-to-json-schema": "^3.25.2"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.13.5",
+    "@types/pdfkit": "^0.17.6",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.7"

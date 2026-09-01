@@ -1,15 +1,16 @@
 # Job application agent
 
-A job agent that resolves a LinkedIn job URL to the matching external job page. The planned product also completes one supported Lever application.
+A job agent that resolves LinkedIn job URLs and includes a general, safety-bounded application controller.
 
 ## Status
 
-The direct LinkedIn resolver and company-careers fallback are complete.
+The resolver and general application controller use Mastra browser agents. The current architecture passes the TypeScript build, focused tests, live resolver checks, and a local Lever no-submit check.
 
-- Ticket 1 resolves a usable direct external Apply destination.
-- Ticket 2 resolves through the company website when direct Apply is unavailable.
-- Ticket 5, the required 20-job evaluation, is the active task.
-- Browserbase remains the production browser. Local Chrome supports development verification while the Browserbase account returns a quota error.
+- The Mastra agent owns the browser tool loop.
+- Stagehand extracts page meaning and observes likely actions.
+- AgentBrowser performs navigation, snapshots, clicks, and screenshots.
+- TypeScript preserves candidates and makes the final validation decision.
+- Browserbase remains the production browser. Local Chrome supports development verification.
 
 - `plan.md` contains the ticket backlog and architecture.
 - `task.md` contains the only active implementation task.
@@ -52,14 +53,15 @@ LinkedIn URL
 
 - TypeScript
 - Mastra
-- OpenAI `gpt-5.6-luna` with high reasoning
-- Gemini 3.7 Flash as an explicit fallback
+- OpenAI `gpt-5.6-luna` with medium reasoning
+- Gemini 3.6 Flash with dynamic thinking as an explicit fallback
+- DeepSeek V4 Flash Vision as an experimental fallback
 - Browserbase remote Chromium
 - Stagehand
 - `agent-browser`
 - Zod
 - Railway
-- SQLite when persistence is introduced
+- LibSQL-backed SQLite for persistent Mastra memory
 
 ## Browser architecture
 
@@ -68,16 +70,20 @@ Browserbase provides the remote Chromium session used by the deployed product.
 ```text
 Mastra agent
     ↓
-Stagehand / agent-browser
+Stagehand extract/observe
+    ↓
+AgentBrowser snapshot/action
     ↓
 Browserbase
     ↓
 LinkedIn / company sites / Lever
 ```
 
-Use Stagehand for uncertain navigation and page understanding.
+Use Stagehand for page understanding and action proposals.
 
-Use `agent-browser` for precise browser actions such as form interaction, resume upload, validation, submission, and screenshots.
+Use AgentBrowser for navigation, accessibility snapshots, precise actions, form interaction, validation, submission, and screenshots.
+
+Both providers connect to one CDP session and run sequentially. Stagehand cannot mutate the page because the resolver does not expose `stagehand_act`.
 
 The resolver uses this decision order:
 
@@ -89,6 +95,17 @@ structured page data and visible links
 ```
 
 The model interprets uncertain company, job, and page evidence. TypeScript controls URLs, progress, action limits, result formatting, and success.
+
+### Persistent memory
+
+Mastra stores agent threads and browser-context state through its official `LibSQLStore` adapter.
+
+- Local development defaults to `file:./mastra.db`.
+- Set `MASTRA_DATABASE_URL=file:/data/mastra.db` when deployment provides a durable volume.
+- Set `MASTRA_DATABASE_URL` and `MASTRA_DATABASE_AUTH_TOKEN` for a remote LibSQL service.
+- `mastra.db` is ignored by Git.
+
+This storage preserves Mastra memory across process restarts. Ticket 6 still owns product run-state and result persistence.
 
 Ticket 6 will move run execution and result storage into the deployed service so a run can continue after the frontend closes.
 
@@ -142,11 +159,11 @@ Ticket 1 — Direct LinkedIn resolver (complete)
     ↓
 Ticket 2 — Company careers fallback (complete)
     ↓
-Ticket 5 — 20-job resolver evaluation (active)
+Ticket 3 — General application agent (active; review pending)
 
 Ticket 1
     ↓
-Ticket 3 — Lever auto-apply
+Ticket 5 — 20-job resolver evaluation (planned)
 
 Tickets 2 + 3
     ↓
@@ -161,7 +178,7 @@ See `plan.md` for ticket details and blockers.
 
 ## Verified resolver behavior
 
-The final Ticket 2 verification used an authenticated local Chrome profile and OpenAI `gpt-5.6-luna` with high reasoning.
+The final Ticket 2 verification used an authenticated local Chrome profile and OpenAI `gpt-5.6-luna`. Current evaluation runs use medium reasoning.
 
 | Path | Result | Runtime |
 |---|---|---:|
@@ -194,34 +211,51 @@ Example:
 }
 ```
 
-## Lever application
+## Career and application agents
 
-The application flow uses:
+The interactive product uses one conversational Mastra career agent with guarded resolution and application tools. The existing one-shot application command remains available for focused application proofs. AgentBrowser performs exact browser actions; Stagehand interprets uncertain page meaning only.
 
-- a structured candidate profile;
-- an approved resume;
-- the provided Lever application.
+### Interactive terminal client
 
-Target:
+Start the interactive terminal client:
 
-```text
-https://jobs.lever.co/ekimetrics/d9d64766-3d42-4ba9-94d4-f74cdaf20065/apply
+```bash
+npm run apply:chat
 ```
 
-The agent should:
+The Pi-like client is only the input and transcript surface. Every ordinary message, including a greeting without a URL, goes to the same career-agent thread. The agent can discuss a role, open an exact user-supplied LinkedIn or ATS URL, resolve the external source, and apply. It chooses its next tool; the client does not run a URL or application wizard.
+
+Assistant text streams as it is produced. Tool activity renders by safe tool name without arguments or results. One conversation can handle several jobs sequentially on the same runtime. Use `/status`, `/help`, or `/exit` for client lifecycle controls. `/cancel` ends the current career session and releases its browser resources.
+
+When an application needs a missing private fact, `request_user_input` suspends the Mastra tool and sends a typed, value-free form request to the client. The exact response is saved as extensible session context and bound to the browser without being returned to the model. Generated free-form answers appear in chat and require approval. Guarded final validation produces a submission confirmation request; only an exact confirmation permits one final click.
+
+Candidate facts, reusable answers, approved resume IDs, and declared credential handles are resolved in TypeScript. The agent receives only approved semantic keys. It can advance only an exact `Next` control. Unknown, Continue, review, and final controls block rather than risk navigation or submission.
+
+During source resolution, the career agent can use general navigation and Stagehand interpretation against visible evidence. After `enter_application_mode` validates and locks an application form, raw snapshots, Stagehand, generic navigation, clicking, tab switching, typing, and selection are unavailable so filled private values cannot return to a model. Value-free inspection and protected tools own approved values, choices, credentials, uploads, exact Next, structured input, final validation, and the one confirmed submit attempt.
+
+### Application commands
+
+The application-agent path is verified without submission through a dedicated test command:
 
 ```text
-open application
-→ inspect fields
-→ map candidate data
-→ upload resume
-→ complete required fields
-→ validate
-→ submit
-→ verify result
+npm run apply:test -- --url https://jobs.lever.co/ekimetrics/d9d64766-3d42-4ba9-94d4-f74cdaf20065/apply
 ```
 
-If required factual candidate information is missing, the agent returns a blocker instead of inventing a value.
+Use the private factual profile and approved matching resume without authorizing submission:
+
+```text
+npm run apply:test:factual -- --url https://jobs.lever.co/ekimetrics/d9d64766-3d42-4ba9-94d4-f74cdaf20065/apply
+```
+
+Local Chrome fixtures verify protected fact/credential actions, conditional controls, exact Next, no-submit, and one controller click with same-page confirmation. An interactive local Lever run reached `ready_to_submit` without clicking submit; Browserbase application behavior remains unverified.
+
+For an explicitly authorized real submission, complete the ignored `data/candidate/profile.json` with factual data that matches the approved resume, then run:
+
+```text
+npm run apply:submit -- --url https://jobs.lever.co/ekimetrics/d9d64766-3d42-4ba9-94d4-f74cdaf20065/apply
+```
+
+`submit` is false by default. With explicit `--submit`, TypeScript validates the current page and owns one final click; uncertain submission is never retried. The full suite and local no-submit Lever proof pass. No live application submission has been authorized or performed.
 
 ## Resolver evaluation
 
@@ -253,7 +287,10 @@ Live runs require:
 
 - `OPENAI_API_KEY` for the default model
 - `GEMINI_API_KEY` only when `LLM_PROVIDER=gemini`
+- `DEEPSEEK_API_KEY` only when `LLM_PROVIDER=deepseek`
 - Browserbase credentials
+- `MASTRA_DATABASE_URL` when the default local database path is not suitable
+- `MASTRA_DATABASE_AUTH_TOKEN` only for authenticated remote LibSQL
 - an authenticated Browserbase context when LinkedIn requires authentication
 - a LinkedIn job URL
 - candidate profile and resume when testing auto-apply

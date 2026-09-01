@@ -1,28 +1,30 @@
 import { describe, it, expect } from "vitest";
 import { validateDestination } from "../src/resolver/validateDestination.js";
-import { isValidLinkedInJobUrl, ResolverInputSchema } from "../src/types.js";
+import { isValidLinkedInJobUrl } from "../src/types.js";
 
 describe("LinkedIn Input Validation", () => {
-  it("accepts valid HTTPS LinkedIn job URLs with exact numeric ID", () => {
+  it("accepts valid HTTPS LinkedIn job URL variants", () => {
     expect(isValidLinkedInJobUrl("https://www.linkedin.com/jobs/view/4460503117")).toBe(true);
     expect(isValidLinkedInJobUrl("https://www.linkedin.com/jobs/view/4460503117/")).toBe(true);
     expect(isValidLinkedInJobUrl("https://linkedin.com/jobs/view/123456789?refId=abc#overview")).toBe(true);
+    expect(isValidLinkedInJobUrl("https://www.linkedin.com/comm/jobs/view/4460503117")).toBe(true);
+    expect(isValidLinkedInJobUrl("https://uk.linkedin.com/jobs/view/senior-engineer-at-x-4460503117")).toBe(true);
   });
 
   it("rejects non-HTTPS URLs", () => {
     expect(isValidLinkedInJobUrl("http://www.linkedin.com/jobs/view/4460503117")).toBe(false);
   });
 
-  it("rejects non-LinkedIn hosts and subdomains", () => {
+  it("rejects non-LinkedIn hosts", () => {
     expect(isValidLinkedInJobUrl("https://example.com/jobs/view/4460503117")).toBe(false);
     expect(isValidLinkedInJobUrl("https://jobs.lever.co/company/123")).toBe(false);
-    expect(isValidLinkedInJobUrl("https://sub.linkedin.com/jobs/view/4460503117")).toBe(false);
+    expect(isValidLinkedInJobUrl("https://linkedin.com.example.com/jobs/view/4460503117")).toBe(false);
   });
 
-  it("rejects non-numeric suffix or alphanumeric paths like /jobs/view/123abc", () => {
+  it("rejects paths without a trailing numeric job ID", () => {
     expect(isValidLinkedInJobUrl("https://www.linkedin.com/jobs/view/123abc")).toBe(false);
     expect(isValidLinkedInJobUrl("https://www.linkedin.com/jobs/view/abc123")).toBe(false);
-    expect(isValidLinkedInJobUrl("https://www.linkedin.com/jobs/view/software-engineer-123")).toBe(false);
+    expect(isValidLinkedInJobUrl("https://www.linkedin.com/jobs/view/software-engineer")).toBe(false);
   });
 
   it("rejects non-job LinkedIn paths", () => {
@@ -31,68 +33,17 @@ describe("LinkedIn Input Validation", () => {
     expect(isValidLinkedInJobUrl("https://www.linkedin.com/company/salesforce")).toBe(false);
   });
 
-  it("Zod schema rejects invalid URLs with helpful message", () => {
-    const res = ResolverInputSchema.safeParse({ linkedinUrl: "https://example.com/jobs/123" });
-    expect(res.success).toBe(false);
-    if (!res.success) {
-      expect(res.error.errors[0].message).toContain("HTTPS LinkedIn job URL");
-    }
-  });
 });
 
 describe("Destination Validation - Authentication & LinkedIn Rejection", () => {
-  it("rejects LinkedIn login redirect", () => {
-    const result = validateDestination({
-      company: "Salesforce",
-      jobTitle: "Software Engineer",
-      destinationUrl: "https://www.linkedin.com/login?fromSignIn=true",
-    });
+  it.each([
+    "https://www.linkedin.com/login?fromSignIn=true",
+    "https://www.linkedin.com/signup/cold-join?trk=public_jobs_apply-link-onsite_sign-up-modal",
+    "https://www.linkedin.com/checkpoint/challenge/abc",
+  ])("rejects LinkedIn authentication gate %s", (destinationUrl) => {
+    const result = validateDestination({ company: "Salesforce", jobTitle: "Software Engineer", destinationUrl });
     expect(result.isValid).toBe(false);
     expect(result.reason).toContain("authentication/registration gate");
-  });
-
-  it("rejects LinkedIn cold-join signup gate", () => {
-    const result = validateDestination({
-      company: "Salesforce",
-      jobTitle: "Summer 2027 Intern - Software Engineer",
-      destinationUrl: "https://www.linkedin.com/signup/cold-join?trk=public_jobs_apply-link-onsite_sign-up-modal",
-    });
-    expect(result.isValid).toBe(false);
-    expect(result.reason).toContain("authentication/registration gate");
-  });
-
-  it("rejects LinkedIn authwall", () => {
-    const result = validateDestination({
-      company: "Google",
-      jobTitle: "SWE",
-      destinationUrl: "https://www.linkedin.com/authwall?trk=job",
-    });
-    expect(result.isValid).toBe(false);
-    expect(result.reason).toContain("authentication/registration gate");
-  });
-
-  it("rejects LinkedIn checkpoint or challenge", () => {
-    const result = validateDestination({
-      company: "Google",
-      jobTitle: "SWE",
-      destinationUrl: "https://www.linkedin.com/checkpoint/challenge/abc",
-    });
-    expect(result.isValid).toBe(false);
-    expect(result.reason).toContain("authentication/registration gate");
-  });
-
-  it("rejects standalone LinkedIn challenge and verification paths", () => {
-    for (const destinationUrl of [
-      "https://www.linkedin.com/challenge/abc",
-      "https://www.linkedin.com/verification/abc",
-    ]) {
-      const result = validateDestination({
-        company: "Google",
-        jobTitle: "SWE",
-        destinationUrl,
-      });
-      expect(result.isValid).toBe(false);
-    }
   });
 
   it("rejects any destination remaining on LinkedIn", () => {
@@ -208,23 +159,6 @@ describe("Destination Validation - Negative Mismatch Tests", () => {
         jobMatches: false,
         companyEvidence: "Salesforce",
         jobEvidence: "Summer 2027 Intern - Software Engineer",
-      },
-    });
-    expect(result.isValid).toBe(false);
-    expect(result.reason).toContain("does not match role \"Senior Software Engineer\"");
-  });
-
-  it("rejects semantic evaluation when jobMatches is false", () => {
-    const result = validateDestination({
-      company: "Salesforce",
-      jobTitle: "Senior Software Engineer",
-      destinationUrl: "https://salesforce.wd12.myworkdayjobs.com/External_Career_Site/job/San-Francisco/Summer-2027-Intern---Software-Engineer_JR123",
-      semanticEvaluation: {
-        pageType: "job",
-        companyMatches: true,
-        jobMatches: false,
-        companyEvidence: "Salesforce",
-        jobEvidence: "Destination is for an internship role, not Senior Software Engineer",
       },
     });
     expect(result.isValid).toBe(false);

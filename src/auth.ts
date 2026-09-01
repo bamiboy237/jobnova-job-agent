@@ -1,14 +1,7 @@
 import readline from "node:readline";
 import "dotenv/config";
 import { createLocalSession, createRemoteSession, saveLocalBrowserState } from "./browser/session.js";
-
-function safeError(error: unknown): string {
-  let message = error instanceof Error ? error.message : String(error);
-  for (const secret of [process.env.BROWSERBASE_API_KEY, process.env.GEMINI_API_KEY]) {
-    if (secret) message = message.replaceAll(secret, "***");
-  }
-  return message.replace(/wss:\/\/[^\s]+/g, "wss://***");
-}
+import { collectEnvSecrets, safeError } from "./resolver/browserSafety.js";
 
 async function promptUser(questionText: string): Promise<void> {
   const rl = readline.createInterface({
@@ -84,7 +77,7 @@ export async function runLinkedInAuth(): Promise<void> {
 // Direct execution
 if (process.argv[1] && (process.argv[1].endsWith("auth.ts") || process.argv[1].endsWith("auth.js"))) {
   runLinkedInAuth().catch((err) => {
-    console.error("Auth setup error:", safeError(err));
+    console.error("Auth setup error:", safeError(err, collectEnvSecrets()));
     process.exit(1);
   });
 }

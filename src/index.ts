@@ -1,17 +1,21 @@
 import "dotenv/config";
+import { pathToFileURL } from "node:url";
 import { resolveDirectLinkedInJob } from "./resolver/directResolver.js";
 
 export * from "./types.js";
 export * from "./resolver/directResolver.js";
 export * from "./resolver/validateDestination.js";
+export * from "./apply/applyLever.js";
+export * from "./apply/applyJob.js";
+export * from "./apply/generalFacts.js";
+export * from "./apply/runLedger.js";
+export * from "./apply/generalSafety.js";
+export * from "./apply/applyAgent.js";
+export * from "./apply/applicationResult.js";
+export * from "./apply/candidateCatalog.js";
+export * from "./apply/terminalChat.js";
 
-// If executed directly as a CLI script
-const isDirectExecution =
-  process.argv[1] &&
-  (process.argv[1].endsWith("src/index.ts") ||
-    process.argv[1].endsWith("dist/index.js") ||
-    process.argv[1].endsWith("index.ts") ||
-    process.argv[1].endsWith("index.js"));
+const isDirectExecution = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
 
 if (isDirectExecution && process.argv.length > 2) {
   const linkedinUrl = process.argv[2];

@@ -41,7 +41,7 @@ export async function createRemoteSession(options?: {
   }
 
   const bb = new Browserbase({ apiKey });
-  const shouldPersist = options?.persistContext ?? true;
+  const shouldPersist = options?.persistContext ?? false;
 
   const session = await bb.sessions.create({
     projectId,
@@ -74,6 +74,7 @@ export async function createRemoteSession(options?: {
       } catch {
         // Safe close ignoring disconnect race
       }
+      await bb.sessions.update(session.id, { status: "REQUEST_RELEASE" }).catch(() => {});
     },
   };
 }
