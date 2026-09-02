@@ -49,6 +49,7 @@ export interface CareerSession {
   respond(input: string): AsyncIterable<CareerEvent>;
   status(): CareerSessionStatus;
   interrupt(): void;
+  releaseBrowser(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -120,7 +121,7 @@ function isInteraction(value: unknown): value is CareerInteraction {
   return value.kind === "user_input" || value.kind === "answer_approval" || value.kind === "submission";
 }
 
-export async function createCareerSession(deps: CareerSessionDependencies = productionDependencies, options: { resume?: boolean } = {}): Promise<CareerSession> {
+export async function createCareerSession(deps: CareerSessionDependencies = productionDependencies, options: { resume?: boolean; persist?: boolean } = {}): Promise<CareerSession> {
   const loaded = await deps.loadProfile();
   const config = deps.getConfig();
   const saved = options.resume ? await deps.loadSessionState() : undefined;
@@ -150,12 +151,22 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
   let pending: PendingInteraction | undefined;
   let started = false;
   let closed = false;
-  let resourcesClosed = false;
+  let browserReleased = false;
 
   const closeResources = async () => {
-    if (resourcesClosed) return;
-    resourcesClosed = true;
+    if (browserReleased) return;
+    browserReleased = true;
     await runtime.browsers.close().catch(() => {});
+  };
+
+  const restoreBrowser = async () => {
+    if (!browserReleased) return;
+    browserReleased = false;
+    runtime.browsers.actionBrowser.setCurrentThread(threadId);
+    await runtime.browsers.actionBrowser.ensureReady();
+    if (!state.currentJobUrl) return;
+    const manager = await runtime.browsers.actionBrowser.getManagerForThread(threadId);
+    await manager.getPage().goto(state.currentJobUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
   };
 
   const streamOutput = async function* (output: Awaited<ReturnType<typeof agent.stream>>, runId: string, abort: AbortController): AsyncGenerator<CareerEvent> {
@@ -187,6 +198,7 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
     try {
       if (!started) { started = true; yield { type: "session_started", threadId }; }
       yield { type: "status", status, detail: status === "thinking" ? "Career agent is working" : "Career agent is continuing" };
+      await restoreBrowser();
       const output = await operation(abort);
       yield* streamOutput(output, runId, abort);
     } catch (error) {
@@ -200,7 +212,7 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
       activeAbort = undefined;
       activeTurn = undefined;
       finish();
-      await deps.saveSessionState(serializeCareerSessionState(threadId, state));
+      if (options.persist !== false) await deps.saveSessionState(serializeCareerSessionState(threadId, state));
     }
   };
 
@@ -242,7 +254,7 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
     }
   };
   const close = async () => {
-    if (closed && resourcesClosed) return;
+    if (closed && browserReleased) return;
     closed = true;
     interrupt();
     await activeTurn?.catch(() => {});
@@ -255,6 +267,10 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
     respond,
     status: () => ({ threadId, mode: state.mode, currentJobUrl: state.currentJobUrl, working: Boolean(activeTurn), waitingForInput: Boolean(pending) }),
     interrupt,
+    releaseBrowser: async () => {
+      if (activeTurn) return;
+      await closeResources();
+    },
     close,
   };
 }

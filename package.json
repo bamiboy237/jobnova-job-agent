@@ -7,8 +7,10 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "serve": "node dist/server.js",
     "resolve": "tsx src/index.ts",
     "auth": "tsx src/auth.ts",
+    "profile:synthetic": "tsx src/apply/generateSyntheticProfile.ts",
     "apply:chat": "tsx src/apply/chatCli.ts",
     "apply:test": "tsx src/apply/cli.ts",
     "apply:test:factual": "tsx src/apply/cli.ts --factual",
@@ -16,6 +18,7 @@
   },
   "dependencies": {
     "@browserbasehq/sdk": "^2.2.0",
+    "@libsql/client": "^0.17.4",
     "@mastra/agent-browser": "^0.5.1",
     "@mastra/core": "^1.63.2",
     "@mastra/libsql": "^1.22.2",
