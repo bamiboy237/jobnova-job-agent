@@ -10,7 +10,15 @@ describe("general application inputs", () => {
   it("converts only trusted candidate facts", () => {
     const profile = createSyntheticProfile();
     const catalog = candidateProfileToCatalog({ ...profile, extra: "no" } as never);
-    expect(catalog.facts).toMatchObject({ firstName: "Taylor", lastName: "Alex Sample", phoneDigits: "5550104242" });
+    expect(catalog.facts).toMatchObject({
+      firstName: "Taylor",
+      lastName: "Alex Sample",
+      phoneDigits: "5550104242",
+      degree: "Bachelors",
+      school: "Example State University",
+      requiresSponsorship: false,
+      hasValidWorkPermit: true,
+    });
     expect(catalog.facts).toHaveProperty("email");
     expect(catalog.facts).not.toHaveProperty("isSynthetic");
     expect(catalog.facts).not.toHaveProperty("extra");

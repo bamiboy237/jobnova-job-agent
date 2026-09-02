@@ -49,7 +49,7 @@ export function compactSupersededSnapshots<T extends MessageWithParts>(messages:
             result: {
               success: true,
               superseded: true,
-              message: `[${part.toolInvocation.toolName} superseded; use only the latest result.]`,
+              message: `[${part.toolInvocation.toolName || "tool"} superseded; use only the latest result.]`,
             },
           },
         };

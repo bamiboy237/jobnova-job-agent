@@ -359,14 +359,24 @@ async function captureScreenshot(browser: AgentBrowser, runId: string, label: st
   try {
     const screenshot = await browser.screenshot({ fullPage: false });
     if (!("base64" in screenshot) || typeof screenshot.base64 !== "string") return undefined;
-    const directory = path.resolve(process.cwd(), "screenshots");
+    const directory = path.resolve(process.env.SCREENSHOTS_DIR || path.join(process.cwd(), "screenshots"));
     const target = path.join(directory, `resolver_${runId}_${label}.png`);
     await fs.mkdir(directory, { recursive: true });
     await fs.writeFile(target, Buffer.from(screenshot.base64, "base64"));
+    await removeOldScreenshots(directory);
     return target;
   } catch {
     return undefined;
   }
+}
+
+async function removeOldScreenshots(directory: string): Promise<void> {
+  const files = await fs.readdir(directory, { withFileTypes: true });
+  const screenshots = await Promise.all(files
+    .filter((file) => file.isFile() && file.name.endsWith(".png"))
+    .map(async (file) => ({ name: file.name, modified: (await fs.stat(path.join(directory, file.name))).mtimeMs })));
+  screenshots.sort((left, right) => right.modified - left.modified);
+  await Promise.all(screenshots.slice(200).map((file) => fs.unlink(path.join(directory, file.name))));
 }
 
 function failure(

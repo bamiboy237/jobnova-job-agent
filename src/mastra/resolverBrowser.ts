@@ -10,6 +10,7 @@ import {
 export interface ResolverBrowsers {
   actionBrowser: AgentBrowser;
   interpretationBrowser: StagehandBrowser;
+  release: () => Promise<void>;
   close: () => Promise<void>;
 }
 
@@ -57,16 +58,19 @@ export function createResolverBrowsers(model: ModelConfiguration, requireLinkedI
 
   installDialogAutoDismiss(actionBrowser);
 
+  const release = async () => {
+    await Promise.allSettled([
+      actionBrowser.close(),
+      interpretationBrowser.close(),
+    ]);
+    await session.release();
+  };
+
   return {
     actionBrowser,
     interpretationBrowser,
-    close: async () => {
-      await Promise.allSettled([
-        actionBrowser.close(),
-        interpretationBrowser.close(),
-      ]);
-      await session.release();
-    },
+    release,
+    close: release,
   };
 }
 

@@ -42,8 +42,11 @@ export class BrowserbaseSession implements CdpSession {
 
   async release(): Promise<void> {
     await this.connecting?.catch(() => {});
-    if (!this.session || !this.browserbase) return;
-    await this.browserbase.sessions.update(this.session.id, { status: "REQUEST_RELEASE" }).catch(() => {});
+    if (this.session && this.browserbase) {
+      await this.browserbase.sessions.update(this.session.id, { status: "REQUEST_RELEASE" }).catch(() => {});
+    }
+    this.session = undefined;
+    this.connecting = undefined;
   }
 
   private async create(): Promise<string> {

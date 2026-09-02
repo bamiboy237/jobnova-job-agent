@@ -1,311 +1,138 @@
-# Job application agent
+# Jobnova
 
-A job agent that resolves LinkedIn job URLs and includes a general, safety-bounded application controller.
+Jobnova combines Projects 2 and 3 of the take-home in one deployed product. Paste a LinkedIn job URL to resolve its matching employer or ATS page. Continue in the career chat to inspect the role, complete guarded application fields, and approve the final submission.
 
-## Status
+## Try the deployed product
 
-The resolver and general application controller use Mastra browser agents. The current architecture passes the TypeScript build, focused tests, live resolver checks, and a local Lever no-submit check.
+**Live URL:** `OWNER_TO_ADD_RAILWAY_URL`
 
-- The Mastra agent owns the browser tool loop.
-- Stagehand extracts page meaning and observes likely actions.
-- AgentBrowser performs navigation, snapshots, clicks, and screenshots.
-- TypeScript preserves candidates and makes the final validation decision.
-- Browserbase remains the production browser. Local Chrome supports development verification.
+**Invite code:** `OWNER_TO_SHARE_SEPARATELY`
 
-- `plan.md` contains the ticket backlog and architecture.
-- `task.md` contains the only active implementation task.
-- `issues.md` contains signed work notes, blockers, and review findings.
-- `AGENTS.md` defines the rules for planning, implementation, and review.
+To test the core flow in about 30 seconds:
 
-## Product flow
+1. Open the live URL and enter the invite code.
+2. Paste a fresh `https://www.linkedin.com/jobs/view/<job_id>` URL into **Quick resolve**.
+3. Keep the page open to watch the result, or close it and return to the run URL later.
+4. Paste a job URL into **Career agent** to start the guided application flow.
 
-The take-home has two core capabilities:
+The deployed service requires its invite code on every API request. Completed resolver runs persist across process restarts.
 
-```text
-Project 2
-LinkedIn URL
-→ inspect LinkedIn
-→ resolve matching external job / ATS page
-→ return result
+The phone-friendly interface uses the Vercel AI SDK `useChat` hook with a custom transport for Jobnova’s server-sent career events. Assistant text streams into normal text parts. Browser-tool states and private interaction requests become typed data parts. Private card responses resume the active server turn without becoming chat messages.
 
-Project 3
-ATS application
-→ load candidate data
-→ fill form
-→ upload resume
-→ validate
-→ submit
-→ verify result
+## Results
+
+### Frozen resolver evaluation
+
+**Result:** `OWNER_TO_ADD_CORRECT_COUNT/20 correct`
+
+The owner runs the frozen 20-case subset locally and checks the exported results into `data/evaluation.json`. The deployed product renders that file as an evidence table. Until the owner imports the run, the table displays a pending state rather than a fabricated score.
+
+### Lever application proof
+
+**Status:** `OWNER_TO_ADD`
+
+| Evidence | Result |
+|---|---|
+| Fields completed | `OWNER_TO_ADD` |
+| Runtime | `OWNER_TO_ADD` |
+| Confirmation | `OWNER_TO_ADD` |
+| Screenshots | `OWNER_TO_ADD` |
+
+The owner performs the one authorized submission with the synthetic profile. No deployed or automated verification in this repository claims that the submission ran.
+
+## How Jobnova works
+
+```mermaid
+flowchart TD
+    A["LinkedIn job URL"] --> B["Resolver agent"]
+    B --> C["Deterministic destination validation"]
+    C --> D["Verified employer or ATS page"]
+    D --> E["Career and application agent"]
+    E --> F["Guarded browser tools"]
+    F --> G["Human input and approval"]
+    G --> H["One confirmed submission attempt"]
 ```
 
-These are built separately first, then connected into one product.
+The resolver uses deterministic browser actions first. Stagehand interprets page meaning only when visible evidence is ambiguous. TypeScript validates the final company, role, and destination before the API reports success.
 
-Final flow:
+The application flow separates model-visible reasoning from private browser actions:
 
-```text
-LinkedIn URL
-→ resolve external job source
-→ optionally apply
-→ record result
-```
+- The model receives semantic field keys, tool status, and value-free page state.
+- TypeScript resolves candidate facts and writes values through guarded tools.
+- Missing private values use inline interaction cards. Responses do not appear in the chat transcript.
+- Generated free-form answers require approval.
+- Submission requires a fresh final audit and one explicit confirmation.
 
-## Stack
+The HTTP service keeps at most two Browserbase sessions live across resolver runs and chats. An idle chat releases its browser after 10 minutes. The Mastra thread and career state remain available, and the next message reopens the current job URL.
 
-- TypeScript
-- Mastra
-- OpenAI `gpt-5.6-luna` with medium reasoning
-- Gemini 3.6 Flash with medium dynamic thinking as the primary runtime model
-- DeepSeek V4 Flash Vision as an experimental fallback
-- Browserbase remote Chromium
-- Stagehand
-- `agent-browser`
-- Zod
-- Railway
-- LibSQL-backed SQLite for persistent Mastra memory
+## Run locally
 
-## Browser architecture
-
-Browserbase provides the remote Chromium session used by the deployed product.
-
-```text
-Mastra agent
-    ↓
-Stagehand extract/observe
-    ↓
-AgentBrowser snapshot/action
-    ↓
-Browserbase
-    ↓
-LinkedIn / company sites / Lever
-```
-
-Use Stagehand for page understanding and action proposals.
-
-Use AgentBrowser for navigation, accessibility snapshots, precise actions, form interaction, validation, submission, and screenshots.
-
-Both providers connect to one CDP session and run sequentially. Stagehand cannot mutate the page because the resolver does not expose `stagehand_act`.
-
-The resolver uses this decision order:
-
-```text
-structured page data and visible links
-→ deterministic navigation
-→ scoped model interpretation when evidence is ambiguous
-→ deterministic final acceptance
-```
-
-The model interprets uncertain company, job, and page evidence. TypeScript controls URLs, progress, action limits, result formatting, and success.
-
-### Persistent memory
-
-Mastra stores agent threads and browser-context state through its official `LibSQLStore` adapter.
-
-- Local development defaults to `file:./mastra.db`.
-- Set `MASTRA_DATABASE_URL=file:/data/mastra.db` when deployment provides a durable volume.
-- Set `MASTRA_DATABASE_URL` and `MASTRA_DATABASE_AUTH_TOKEN` for a remote LibSQL service.
-- `mastra.db` is ignored by Git.
-
-This storage preserves Mastra memory across process restarts. Ticket 6 still owns product run-state and result persistence.
-
-Ticket 6 will move run execution and result storage into the deployed service so a run can continue after the frontend closes.
-
-### Dynamic authenticated pages
-
-Authenticated single-page applications can expose an empty shell at `domcontentloaded`, hydrate after the first DOM read, or keep background requests open indefinitely. The resolver waits for the evidence needed by the next step instead of waiting for global network idleness.
-
-Use this observation order:
-
-1. Read JSON-LD, hydration data, visible links, accessible names, and visible frame content.
-2. Wait for a specific element, URL transition, or relevant response when required evidence is still loading.
-3. Call the model only when deterministic evidence cannot select one supported result.
-4. Refresh page state after navigation or mutation. Element references and cached observations do not survive arbitrary page changes.
-
-Ticket 5 will measure phase time and model-call counts across 20 frozen cases. That evidence gates later optimization. Possible follow-up work includes evidence-aligned ATS readiness, scoped accessibility input, or replay of a stable observed action.
-
-LinkedIn Voyager and similar authenticated endpoints are undocumented website behavior. They are not part of the current resolver. Adding one requires an explicit planning decision about breakage, compliance, and session risk.
-
-References:
-
-- [Playwright aria snapshots](https://playwright.dev/docs/aria-snapshots)
-- [Playwright response waits](https://playwright.dev/docs/api/class-page#page-wait-for-response)
-- [Stagehand determinism guidance](https://github.com/browserbase/skills/blob/HEAD/skills/browser-use-to-stagehand/references/determinism.md)
-
-## MVP target
-
-The MVP supports:
-
-- LinkedIn → external job-source resolution;
-- company careers fallback when needed;
-- one Lever application path;
-- one remote browser provider;
-- one small deployed product surface.
-
-The MVP does not include:
-
-- Gmail ingestion;
-- schedules;
-- billing;
-- generalized ATS plugins;
-- multiple browser providers;
-- microservices;
-- workflow engines;
-- large dashboards;
-- production-scale multi-tenancy.
-
-## Current implementation order
-
-```text
-Ticket 1 — Direct LinkedIn resolver (complete)
-    ↓
-Ticket 2 — Company careers fallback (complete)
-    ↓
-Ticket 3 — General application agent (active; review pending)
-
-Ticket 1
-    ↓
-Ticket 5 — 20-job resolver evaluation (planned)
-
-Tickets 2 + 3
-    ↓
-Ticket 4 — Connect resolver and auto-apply
-    ↓
-Ticket 6 — Server-side runs
-    ↓
-Ticket 7 — Final deployed product
-```
-
-See `plan.md` for ticket details and blockers.
-
-## Verified resolver behavior
-
-The final Ticket 2 verification used an authenticated local Chrome profile and OpenAI `gpt-5.6-luna`. Current evaluation runs use medium reasoning.
-
-| Path | Result | Runtime |
-|---|---|---:|
-| Salesforce direct Apply | Resolved the matching Workday job | 45.4 s |
-| Neuralink company fallback | Resolved `gh_jid=6083322003` | 49.7 s |
-
-The Neuralink fallback previously took 109.7 seconds. Deterministic careers and exact-job selection reduced that path to 49.7 seconds. The authenticated LinkedIn page still requires model interpretation when it does not expose stable structured identity or a direct external URL.
-
-`issues.md` contains the exact URLs, traces, screenshot paths, and remaining risks.
-
-## Resolver output
-
-The resolver takes a LinkedIn job URL and returns the matching external job destination.
-
-Example:
-
-```json
-{
-  "company": "Example Corp",
-  "jobTitle": "Software Engineer Intern",
-  "linkedinUrl": "...",
-  "externalJobUrl": "...",
-  "runtimeMs": 12345,
-  "trace": [
-    "Opened LinkedIn listing",
-    "Identified company and job",
-    "Followed external apply destination",
-    "Validated destination"
-  ]
-}
-```
-
-## Career and application agents
-
-The interactive product uses one conversational Mastra career agent with guarded resolution and application tools. The existing one-shot application command remains available for focused application proofs. AgentBrowser performs exact browser actions; Stagehand interprets uncertain page meaning only.
-
-### Interactive terminal client
-
-Start the interactive terminal client:
+Requires Node.js 22 or later.
 
 ```bash
-npm run apply:chat
+npm install
+cp .env.example .env
+npm run build
+npm test
+npm run serve
 ```
 
-The Pi-like client is only the input and transcript surface. Every ordinary message, including a greeting without a URL, goes to the same career-agent thread. The agent can discuss a role, open an exact user-supplied LinkedIn or ATS URL, resolve the external source, and apply. It chooses its next tool; the client does not run a URL or application wizard.
+Open `http://localhost:3000`.
 
-Assistant text streams as it is produced. Tool activity renders by safe tool name without arguments or results. One conversation can handle several jobs sequentially on the same runtime. Use `/status`, `/help`, or `/exit` for client lifecycle controls. `/cancel` ends the current career session and releases its browser resources.
+### Environment variables
 
-When an application needs a missing private fact, `request_user_input` suspends the Mastra tool and sends a typed, value-free form request to the client. The exact response is saved as extensible session context and bound to the browser without being returned to the model. Generated free-form answers appear in chat and require approval. Guarded final validation produces a submission confirmation request; only an exact confirmation permits one final click.
+| Variable | Required | Purpose |
+|---|---:|---|
+| `ACCESS_CODE` | Yes for the server | Invite code required by every `/api` route |
+| `OPENAI_API_KEY` | When `LLM_PROVIDER=openai` | OpenAI model access |
+| `GEMINI_API_KEY` | When `LLM_PROVIDER=gemini` | Gemini model access |
+| `LLM_PROVIDER` | No | `gemini` by default; Railway can set `openai` |
+| `BROWSERBASE_API_KEY` | Yes for Browserbase | Creates remote browser sessions |
+| `BROWSERBASE_PROJECT_ID` | Yes for Browserbase | Selects the Browserbase project |
+| `BROWSERBASE_CONTEXT_ID` | Recommended | Reuses the owner’s authenticated LinkedIn context |
+| `BROWSER_PROVIDER` | No | Browserbase by default; use `local` for local proof runs |
+| `MASTRA_DATABASE_URL` | No | LibSQL file or remote URL; defaults to `file:./mastra.db` |
+| `MASTRA_DATABASE_AUTH_TOKEN` | Only for remote LibSQL | Remote database credential |
+| `SCREENSHOTS_DIR` | No | Screenshot output; Railway uses `/data/screenshots` |
+| `PORT` | No | HTTP port; defaults to `3000` |
 
-Candidate facts, reusable answers, approved resume IDs, and declared credential handles are resolved in TypeScript. The agent receives only approved semantic keys. It can advance only an exact `Next` control. Unknown, Continue, review, and final controls block rather than risk navigation or submission.
-
-During source resolution, the career agent can use general navigation and Stagehand interpretation against visible evidence. After `enter_application_mode` validates and locks an application form, raw snapshots, Stagehand, generic navigation, clicking, tab switching, typing, and selection are unavailable so filled private values cannot return to a model. Value-free inspection and protected tools own approved values, choices, credentials, uploads, exact Next, structured input, final validation, and the one confirmed submit attempt.
-
-### Application commands
-
-The application-agent path is verified without submission through a dedicated test command:
+For Railway, mount one persistent volume at `/data` and set:
 
 ```text
-npm run apply:test -- --url https://jobs.lever.co/ekimetrics/d9d64766-3d42-4ba9-94d4-f74cdaf20065/apply
+MASTRA_DATABASE_URL=file:/data/mastra.db
+SCREENSHOTS_DIR=/data/screenshots
 ```
 
-Use the private factual profile and approved matching resume without authorizing submission:
+Leave `BROWSER_PROVIDER` unset in Railway. Run `npm run auth` once with the production `BROWSERBASE_CONTEXT_ID` to establish the owner’s LinkedIn session.
 
-```text
-npm run apply:test:factual -- --url https://jobs.lever.co/ekimetrics/d9d64766-3d42-4ba9-94d4-f74cdaf20065/apply
-```
+### Commands
 
-Local Chrome fixtures verify protected fact/credential actions, conditional controls, exact Next, no-submit, and one controller click with same-page confirmation. An interactive local Lever run reached `ready_to_submit` without clicking submit; Browserbase application behavior remains unverified.
+| Command | Purpose |
+|---|---|
+| `npm run serve` | Start the built HTTP service and exported Next.js chat app |
+| `npm run resolve -- <linkedin-url>` | Run the one-shot resolver CLI |
+| `npm run apply:chat` | Run the terminal career chat |
+| `npm run auth` | Authenticate the configured browser context |
+| `npm run profile:synthetic` | Replace the ignored candidate profile with synthetic data |
+| `BROWSER_PROVIDER=local npm run apply:test -- --url <lever-url>` | Fill and validate without submission |
+| `BROWSER_PROVIDER=local npm run apply:submit -- --url <lever-url>` | Perform one explicitly authorized submission |
 
-For an explicitly authorized real submission, complete the ignored `data/candidate/profile.json` with factual data that matches the approved resume, then run:
+## Service API
 
-```text
-npm run apply:submit -- --url https://jobs.lever.co/ekimetrics/d9d64766-3d42-4ba9-94d4-f74cdaf20065/apply
-```
+All routes require `x-access-code: <ACCESS_CODE>`.
 
-`submit` is false by default. With explicit `--submit`, TypeScript validates the current page and owns one final click; uncertain submission is never retried. The full suite and local no-submit Lever proof pass. No live application submission has been authorized or performed.
+- `POST /api/runs` with `{ "url": "..." }` starts a detached resolver run.
+- `GET /api/runs/:id` returns its status, result, safe trace, runtime, and protected screenshot URLs.
+- `POST /api/chat` creates an in-memory career session.
+- `POST /api/chat/:id/message` and `/respond` stream safe career events over SSE.
+- `POST /api/chat/:id/end` closes the session and releases its browser.
+- `GET /api/eval` returns the checked-in evaluation evidence.
 
-## Resolver evaluation
+## Limits
 
-Project 2 requires testing against 20 randomly selected LinkedIn job URLs.
-
-For each case record:
-
-```text
-LinkedIn URL
-Company
-Expected destination
-Resolved destination
-Success / Failure
-Runtime
-Notes
-```
-
-Primary metric:
-
-```text
-success rate = correct resolutions / 20
-```
-
-The expected destination should be labelled before running the resolver.
-
-## Private inputs
-
-Live runs require:
-
-- `OPENAI_API_KEY` for the default model
-- `GEMINI_API_KEY` only when `LLM_PROVIDER=gemini`
-- `DEEPSEEK_API_KEY` only when `LLM_PROVIDER=deepseek`
-- Browserbase credentials
-- `MASTRA_DATABASE_URL` when the default local database path is not suitable
-- `MASTRA_DATABASE_AUTH_TOKEN` only for authenticated remote LibSQL
-- an authenticated Browserbase context when LinkedIn requires authentication
-- a LinkedIn job URL
-- candidate profile and resume when testing auto-apply
-
-Keep secrets, real candidate data, resumes, and browser connection URLs outside Git.
-
-## Agent workflow
-
-The project uses three roles:
-
-1. **Planning agent** — task scope and decomposition.
-2. **Implementation agent** — behavior in `task.md`.
-3. **Review agent** — correctness and acceptance evidence.
-
-Only the behavior in `task.md` should be implemented.
-Record signed work notes and findings in `issues.md`.
-
-Read `AGENTS.md` before implementation or review.
+- The application proof covers one Lever flow, not every ATS.
+- After private data enters an application, Stagehand interpretation stays disabled. Unclear long-label controls can still require user input rather than exposing filled page state to a model.
+- LinkedIn uses the owner’s persistent Browserbase context. LinkedIn checkpoints or expired authentication block the run cleanly.
+- The server uses one always-on process and an in-memory chat-session map. It is not designed for horizontal scaling.
+- The invite code is a take-home access gate, not account security.
+- The product does not provide multi-tenancy, queues, scheduled work, billing, or background workers.

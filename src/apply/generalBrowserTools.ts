@@ -228,6 +228,11 @@ async function selectFact(browser: AgentBrowser, catalog: CandidateFactCatalog, 
 
 async function setBooleanChoice(browser: AgentBrowser, ref: string, factKey: string, expected: boolean, control: PageControl, threadId?: string, ledger?: ApplicationRunLedger): Promise<SafeOutcome> {
   if (!control.visible || !control.enabled) return { success: false, ref, factKey, error: "Control is not enabled and visible" };
+  if (control.kind === "select") {
+    const option = exactOptionMatch(control.options, expected);
+    if (!option) return { success: false, ref, factKey, error: "Control does not have one unambiguous Yes or No option" };
+    try { await selectControlRef(browser, ref, option, threadId); ledger && recordCompletion(ledger, { identity: control.identity, source: "fact", key: factKey }); return { success: true, ref, factKey }; } catch { return { success: false, ref, factKey, error: "Control mutation failed" }; }
+  }
   if (control.kind === "checkbox") {
     if (control.filled === expected) { ledger && recordCompletion(ledger, { identity: control.identity, source: "fact", key: factKey }); return { success: true, ref, factKey }; }
     try { await clickControlRef(browser, ref, threadId); ledger && recordCompletion(ledger, { identity: control.identity, source: "fact", key: factKey }); return { success: true, ref, factKey }; } catch { return { success: false, ref, factKey, error: "Control mutation failed" }; }

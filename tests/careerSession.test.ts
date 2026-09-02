@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canUseApplicationTool, canUseBrowserMutation, canUseStagehand, secureInputMetadata } from "../src/career/careerAgent.js";
+import { canUseApplicationTool, canUseBrowserMutation, canUseStagehand, findControlByIdentity, secureInputMetadata } from "../src/career/careerAgent.js";
 import { createCareerSession, parseCareerSessionState, serializeCareerSessionState, type CareerEvent, type CareerSessionDependencies } from "../src/career/careerSession.js";
 import { createRunLedger, recordCompletion } from "../src/apply/runLedger.js";
 
@@ -129,6 +129,15 @@ describe("conversational career session", () => {
     const control = { kind: "select", label: "Graduation year", options: ["2026", "2027"] } as never;
     expect(secureInputMetadata(control, "select")).toEqual({ label: "Graduation year", inputType: "select", options: ["2026", "2027"] });
     expect(secureInputMetadata(control, "date")).toBeUndefined();
+  });
+
+  it("recovers a re-rendered interaction control by stable identity", () => {
+    const previous = { identity: "form[0]/input[2]", snapshotRef: "@old" };
+    const current = [
+      { identity: "form[0]/input[1]", snapshotRef: "@other" },
+      { identity: previous.identity, snapshotRef: "@fresh" },
+    ];
+    expect(findControlByIdentity(current as never, previous.identity)).toMatchObject({ snapshotRef: "@fresh" });
   });
 
   it("closes its one runtime exactly once", async () => {
