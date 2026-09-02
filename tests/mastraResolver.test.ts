@@ -90,7 +90,7 @@ describe("Mastra resolver architecture", () => {
 });
 
 describe("Mastra model selection", () => {
-  it("uses OpenAI Luna as the primary model", () => {
+  it("supports explicit OpenAI Luna selection", () => {
     process.env.LLM_PROVIDER = "openai";
     process.env.OPENAI_API_KEY = "openai-key";
     const config = getResolverModelConfig();
@@ -99,12 +99,12 @@ describe("Mastra model selection", () => {
     expect(config.agentProviderOptions).toEqual({ openai: { reasoningEffort: "medium" } });
   });
 
-  it("supports explicit Gemini and DeepSeek selection", () => {
-    process.env.LLM_PROVIDER = "gemini";
+  it("uses Gemini 3.7 Flash by default and supports explicit DeepSeek selection", () => {
+    delete process.env.LLM_PROVIDER;
     process.env.GEMINI_API_KEY = "gemini-key";
     expect(getResolverModelConfig()).toMatchObject({
-      agentModel: { id: "google/gemini-3.6-flash" },
-      browserModel: { modelName: "google/gemini-3.6-flash" },
+      agentModel: { id: "google/gemini-3.7-flash" },
+      browserModel: { modelName: "google/gemini-3.7-flash" },
       agentProviderOptions: { google: { thinkingConfig: { thinkingLevel: "medium" } } },
     });
 

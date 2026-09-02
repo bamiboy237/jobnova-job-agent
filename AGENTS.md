@@ -165,7 +165,7 @@ Do not build a browser-provider abstraction unless a second provider is actually
 
 ## Model and data rules
 
-Use OpenAI `gpt-5.6-luna` with high reasoning as the primary runtime model. Keep Gemini 3.6 Flash with dynamic thinking and DeepSeek V4 Flash Vision as explicit fallbacks selected through `LLM_PROVIDER`.
+Use Gemini 3.7 Flash with dynamic thinking as the primary runtime model. Keep OpenAI `gpt-5.6-luna` and DeepSeek V4 Flash Vision as explicit fallbacks selected through `LLM_PROVIDER`.
 
 Use model reasoning for:
 

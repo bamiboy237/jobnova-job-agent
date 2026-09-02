@@ -54,7 +54,7 @@ LinkedIn URL
 - TypeScript
 - Mastra
 - OpenAI `gpt-5.6-luna` with medium reasoning
-- Gemini 3.6 Flash with dynamic thinking as an explicit fallback
+- Gemini 3.7 Flash with dynamic thinking as the primary runtime model
 - DeepSeek V4 Flash Vision as an experimental fallback
 - Browserbase remote Chromium
 - Stagehand

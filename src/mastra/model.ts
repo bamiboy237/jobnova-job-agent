@@ -15,7 +15,7 @@ export interface ResolverModelConfig {
 }
 
 export function getResolverModelConfig(): ResolverModelConfig {
-  const provider = (process.env.LLM_PROVIDER || "openai").toLowerCase();
+  const provider = (process.env.LLM_PROVIDER || "gemini").toLowerCase();
 
   if (provider === "openai") {
     const apiKey = requireApiKey("OPENAI_API_KEY");
@@ -35,13 +35,13 @@ export function getResolverModelConfig(): ResolverModelConfig {
   if (provider === "gemini") {
     const apiKey = requireApiKey("GEMINI_API_KEY");
     return {
-      agentModel: { id: "google/gemini-3.6-flash", apiKey },
+      agentModel: { id: "google/gemini-3.7-flash", apiKey },
       browserModel: {
-        modelName: "google/gemini-3.6-flash",
+        modelName: "google/gemini-3.7-flash",
         apiKey,
       },
       agentProviderOptions: { google: { thinkingConfig: { thinkingLevel: "medium" } } },
-      label: "Gemini 3.6 Flash (dynamic thinking)",
+      label: "Gemini 3.7 Flash (dynamic thinking)",
       secrets: [apiKey],
     };
   }
