@@ -1,25 +1,28 @@
-interface ToolResultPart {
+interface ToolInvocationPart {
   type: string;
-  toolName?: string;
-  output?: unknown;
+  toolInvocation?: {
+    toolName?: string;
+    result?: unknown;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
-interface MessageWithContent {
-  content: unknown;
+interface MessageWithParts {
+  parts?: ToolInvocationPart[];
   [key: string]: unknown;
 }
 
 const compactableTools = new Set(["browser_snapshot", "inspect_current_page"]);
 
 /** Keeps current page evidence while removing obsolete browser state from the next model request. */
-export function compactSupersededSnapshots<T extends MessageWithContent>(messages: T[]): T[] {
+export function compactSupersededSnapshots<T extends MessageWithParts>(messages: T[]): T[] {
   const results = new Map<string, Array<{ messageIndex: number; partIndex: number }>>();
   messages.forEach((message, messageIndex) => {
-    if (!Array.isArray(message.content)) return;
-    (message.content as ToolResultPart[]).forEach((part, partIndex) => {
-      if (part.type !== "tool-result" || !part.toolName || !compactableTools.has(part.toolName)) return;
-      results.set(part.toolName, [...(results.get(part.toolName) ?? []), { messageIndex, partIndex }]);
+    message.parts?.forEach((part, partIndex) => {
+      const toolName = part.toolInvocation?.toolName;
+      if (part.type !== "tool-invocation" || !toolName || !compactableTools.has(toolName)) return;
+      results.set(toolName, [...(results.get(toolName) ?? []), { messageIndex, partIndex }]);
     });
   });
 
@@ -28,17 +31,21 @@ export function compactSupersededSnapshots<T extends MessageWithContent>(message
   if (obsolete.size === 0) return messages;
 
   return messages.map((message, messageIndex) => {
-    if (!Array.isArray(message.content)) return message;
+    if (!message.parts) return message;
     return {
       ...message,
-      content: (message.content as ToolResultPart[]).map((part, partIndex) => {
+      parts: message.parts.map((part, partIndex) => {
         if (!obsolete.has(`${messageIndex}:${partIndex}`)) return part;
+        const toolName = part.toolInvocation?.toolName;
         return {
           ...part,
-          output: {
-            success: true,
-            superseded: true,
-            message: `[${part.toolName} superseded; use only the latest result.]`,
+          toolInvocation: {
+            ...part.toolInvocation,
+            result: {
+              success: true,
+              superseded: true,
+              message: `[${toolName} superseded; use only the latest result.]`,
+            },
           },
         };
       }),

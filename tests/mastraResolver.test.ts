@@ -17,36 +17,68 @@ afterEach(() => {
 describe("Mastra resolver architecture", () => {
   it("removes obsolete snapshot payloads while preserving the latest refs and other messages", () => {
     const snapshot = (value: string) => ({
+      format: 2,
       role: "tool",
-      content: [{
-        type: "tool-result",
-        toolCallId: `snapshot-${value}`,
-        toolName: "browser_snapshot",
-        output: { success: true, snapshot: value },
+      content: "",
+      parts: [{
+        type: "tool-invocation",
+        toolInvocation: {
+          toolCallId: `snapshot-${value}`,
+          toolName: "browser_snapshot",
+          result: { success: true, snapshot: value },
+        },
       }],
     });
     const user = {
+      format: 2,
       role: "user",
       content: "candidate profile",
     };
     const currentSnapshot = snapshot("current refs");
     const inspection = (value: string) => ({
+      format: 2,
       role: "tool",
-      content: [{
-        type: "tool-result",
-        toolCallId: `inspection-${value}`,
-        toolName: "inspect_current_page",
-        output: { controls: [value] },
+      content: "",
+      parts: [{
+        type: "tool-invocation",
+        toolInvocation: {
+          toolCallId: `inspection-${value}`,
+          toolName: "inspect_current_page",
+          result: { controls: [value] },
+        },
       }],
     });
     const currentInspection = inspection("current controls");
     const compacted = compactSupersededSnapshots([snapshot("old refs"), inspection("old controls"), user, currentSnapshot, currentInspection]);
 
-    expect(compacted[0].content[0]).toMatchObject({ output: { superseded: true } });
-    expect(compacted[1].content[0]).toMatchObject({ output: { superseded: true } });
+    expect(compacted[0].parts[0]).toMatchObject({ toolInvocation: { result: { superseded: true } } });
+    expect(compacted[1].parts[0]).toMatchObject({ toolInvocation: { result: { superseded: true } } });
     expect(compacted[2]).toEqual(user);
     expect(compacted[3]).toEqual(currentSnapshot);
     expect(compacted[4]).toEqual(currentInspection);
+  });
+
+  it("keeps one full result from three realistic snapshot messages", () => {
+    const messages = ["first", "second", "latest"].map((snapshot, index) => ({
+      format: 2,
+      role: "assistant",
+      content: "",
+      parts: [{
+        type: "tool-invocation",
+        toolInvocation: {
+          toolCallId: `call-${index}`,
+          toolName: "browser_snapshot",
+          args: {},
+          result: { success: true, snapshot },
+        },
+      }],
+      metadata: { threadId: "thread-1" },
+    }));
+
+    const compacted = compactSupersededSnapshots(messages);
+
+    expect(compacted.filter((message) => message.parts[0].toolInvocation.result.superseded).length).toBe(2);
+    expect(compacted[2]).toEqual(messages[2]);
   });
 
   it("requires the final semantic candidate to match a browser-observed URL", () => {
