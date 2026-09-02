@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canUseApplicationTool, canUseBrowserMutation, canUseStagehand, secureInputMetadata } from "../src/career/careerAgent.js";
-import { createCareerSession, type CareerEvent, type CareerSessionDependencies } from "../src/career/careerSession.js";
+import { createCareerSession, parseCareerSessionState, serializeCareerSessionState, type CareerEvent, type CareerSessionDependencies } from "../src/career/careerSession.js";
+import { createRunLedger, recordCompletion } from "../src/apply/runLedger.js";
 
 function stream(chunks: unknown[]) {
   return { fullStream: new ReadableStream({ start(controller) { for (const chunk of chunks) controller.enqueue(chunk); controller.close(); } }) };
@@ -31,6 +32,8 @@ function setup() {
     toCatalog: () => ({ facts: {}, reusableAnswers: {} }),
     createRuntime: (_config: unknown, _catalog: unknown, state: typeof capturedState) => { runtimeCreates += 1; capturedState = state; return { mastra: { getAgentById: () => agent }, browsers: { close: async () => { closes += 1; } } }; },
     createId: (() => { let id = 0; return () => `id-${++id}`; })(),
+    loadSessionState: async () => { throw new Error("No saved test session"); },
+    saveSessionState: async () => undefined,
   } as unknown as CareerSessionDependencies;
   return { deps, messages, options, resumes, abortedRuns, setChunks: (chunks: unknown[]) => { nextChunks = chunks; }, setError: (error: Error) => { nextError = error; }, counts: () => ({ runtimeCreates, closes, interrupts }), state: () => capturedState! };
 }
@@ -42,10 +45,29 @@ async function collect(events: AsyncIterable<CareerEvent>): Promise<CareerEvent[
 }
 
 describe("conversational career session", () => {
+  it("round-trips only value-free resumable session state", () => {
+    const ledger = createRunLedger();
+    recordCompletion(ledger, { identity: "id:email", source: "fact", key: "email" });
+    const state = {
+      mode: "applying", currentJobUrl: "https://jobs.example.test/apply",
+      allowedUrls: new Set(["https://jobs.example.test/apply"]), ledger,
+      answers: new Map([["answer", { value: "PRIVATE ANSWER" }]]),
+      context: new Map([["email", { value: "SECRET VALUE" }]]),
+    } as never;
+    const serialized = JSON.stringify(serializeCareerSessionState("thread-1", state));
+    expect(parseCareerSessionState(JSON.parse(serialized))).toEqual({
+      threadId: "thread-1", mode: "applying", currentJobUrl: "https://jobs.example.test/apply",
+      allowedUrls: ["https://jobs.example.test/apply"], completedLedgerKeys: ["email"],
+    });
+    expect(serialized).not.toContain("PRIVATE ANSWER");
+    expect(serialized).not.toContain("SECRET VALUE");
+  });
+
   it("uses one runtime and stable memory thread for normal conversation and sequential jobs", async () => {
     const fixture = setup();
     const session = await createCareerSession(fixture.deps);
-    await collect(session.sendMessage("hey"));
+    fixture.setChunks([{ type: "tool-result", payload: { toolCallId: "observe-1", toolName: "stagehand_observe", isError: false, result: { success: false, error: "Active page unavailable" } } }]);
+    expect(await collect(session.sendMessage("hey"))).toContainEqual({ type: "tool", phase: "failed", toolCallId: "observe-1", name: "stagehand_observe", error: "Active page unavailable" });
     await collect(session.sendMessage("Apply to https://jobs.example.test/one"));
     await collect(session.sendMessage("Now inspect https://jobs.example.test/two"));
     expect(fixture.counts().runtimeCreates).toBe(1);

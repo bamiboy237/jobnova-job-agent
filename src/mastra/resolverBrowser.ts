@@ -13,9 +13,9 @@ export interface ResolverBrowsers {
   close: () => Promise<void>;
 }
 
-export function createResolverBrowsers(model: ModelConfiguration, requireLinkedInAuth = true): ResolverBrowsers {
+export function createResolverBrowsers(model: ModelConfiguration, requireLinkedInAuth = true, keepLocalBrowserAlive = false): ResolverBrowsers {
   const session: CdpSession = process.env.BROWSER_PROVIDER === "local"
-    ? new LocalChromeSession({ requireLinkedInAuth })
+    ? new LocalChromeSession({ requireLinkedInAuth, keepAlive: keepLocalBrowserAlive })
     : new BrowserbaseSession({ persistContext: false });
   const cdpUrl = () => session.connect();
 

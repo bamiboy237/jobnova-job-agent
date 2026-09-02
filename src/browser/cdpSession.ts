@@ -1,5 +1,6 @@
 import Browserbase from "@browserbasehq/sdk";
 import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs/promises";
 import { createServer } from "node:net";
 import { chromium, type Browser, type Page } from "playwright-core";
 import type { AgentBrowser } from "@mastra/agent-browser";
@@ -72,9 +73,12 @@ export class LocalChromeSession implements CdpSession {
   private bootstrapBrowser?: Browser;
   private connecting?: Promise<string>;
   private readonly requireLinkedInAuth: boolean;
+  private readonly keepAlive: boolean;
+  private ownsProcess = false;
 
-  constructor(options?: { requireLinkedInAuth?: boolean }) {
+  constructor(options?: { requireLinkedInAuth?: boolean; keepAlive?: boolean }) {
     this.requireLinkedInAuth = options?.requireLinkedInAuth ?? true;
+    this.keepAlive = options?.keepAlive ?? false;
   }
 
   connect(): Promise<string> {
@@ -84,6 +88,7 @@ export class LocalChromeSession implements CdpSession {
 
   async release(): Promise<void> {
     await this.bootstrapBrowser?.close().catch(() => {});
+    if (this.keepAlive || !this.ownsProcess) return;
     const process = this.process;
     if (!process || process.exitCode !== null) return;
     process.kill("SIGTERM");
@@ -95,6 +100,12 @@ export class LocalChromeSession implements CdpSession {
   }
 
   private async launch(): Promise<string> {
+    const runningEndpoint = await readRunningLocalChromeEndpoint();
+    if (runningEndpoint) {
+      this.ownsProcess = false;
+      return runningEndpoint;
+    }
+
     const port = await availablePort();
     this.process = spawn(LOCAL_CHROME_PATH, [
       `--remote-debugging-port=${port}`,
@@ -104,6 +115,8 @@ export class LocalChromeSession implements CdpSession {
       "--no-default-browser-check",
       "about:blank",
     ], { stdio: "ignore" });
+    this.ownsProcess = true;
+    if (this.keepAlive) this.process.unref();
 
     const endpoint = `http://127.0.0.1:${port}/json/version`;
     for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -138,6 +151,20 @@ export class LocalChromeSession implements CdpSession {
     const context = this.bootstrapBrowser.contexts()[0];
     if (!context) throw new Error("Local Chrome did not expose a browser context");
     await context.addCookies(cookies);
+  }
+}
+
+async function readRunningLocalChromeEndpoint(): Promise<string | undefined> {
+  try {
+    const [portText] = (await fs.readFile(`${LOCAL_BROWSER_PROFILE_DIR}/DevToolsActivePort`, "utf8")).split(/\r?\n/);
+    const port = Number(portText);
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) return undefined;
+    const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1_000) });
+    if (!response.ok) return undefined;
+    const body = await response.json() as { webSocketDebuggerUrl?: string };
+    return body.webSocketDebuggerUrl;
+  } catch {
+    return undefined;
   }
 }
 

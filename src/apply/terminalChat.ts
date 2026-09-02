@@ -1,18 +1,19 @@
 import * as readline from "node:readline";
 import { stdin as defaultStdin, stdout as defaultStdout } from "node:process";
 import type { Readable, Writable } from "node:stream";
-import { createCareerSession, type CareerEvent, type CareerInteraction, type CareerSession } from "../career/careerSession.js";
+import { createCareerSession, resumeCareerSession, type CareerEvent, type CareerInteraction, type CareerSession } from "../career/careerSession.js";
 
-type ClientCommand = "help" | "status" | "cancel" | "exit";
+type ClientCommand = "help" | "status" | "cancel" | "resume" | "exit";
 
 export function parseClientCommand(input: string): ClientCommand | undefined {
   const command = input.trim().toLowerCase();
-  if (["/help", "/status", "/cancel", "/exit"].includes(command)) return command.slice(1) as ClientCommand;
+  if (["/help", "/status", "/cancel", "/resume", "/exit"].includes(command)) return command.slice(1) as ClientCommand;
   return undefined;
 }
 
 export interface TerminalClientDependencies {
   createSession: typeof createCareerSession;
+  resumeSession: typeof resumeCareerSession;
 }
 
 export interface TerminalChatOptions {
@@ -38,18 +39,19 @@ export class TerminalChat {
   constructor(options: TerminalChatOptions = {}) {
     this.input = options.input ?? defaultStdin;
     this.output = options.output ?? defaultStdout;
-    this.deps = options.deps ?? { createSession: createCareerSession };
+    this.deps = options.deps ?? { createSession: createCareerSession, resumeSession: resumeCareerSession };
     this.onExit = options.onExit;
   }
 
-  public async start(initialInput?: string): Promise<void> {
+  public async start(initialInput?: string, resume = false): Promise<void> {
     const done = new Promise<void>((resolve) => { this.finish = resolve; });
     this.write("\nJobnova career agent\n");
     this.write("Talk normally. I can discuss, resolve, and apply to jobs with guarded tools.\n");
-    this.write("Commands: /help /status /cancel /exit\n\n");
+    this.write("Commands: /help /status /cancel /resume /exit\n\n");
     this.rl = readline.createInterface({ input: this.input, output: this.output, prompt: "> " });
     this.rl.on("line", (line) => { void this.dispatch(line); });
     this.rl.on("close", () => { void this.close(); });
+    if (resume) await this.resume();
     this.prompt();
     if (initialInput) void this.dispatch(initialInput);
     await done;
@@ -61,6 +63,7 @@ export class TerminalChat {
     if (command === "help") { this.showHelp(); return; }
     if (command === "status") { await this.showStatus(); return; }
     if (command === "cancel") { await this.cancel(); return; }
+    if (command === "resume") { await this.resume(); return; }
     if (command === "exit") { await this.close(); return; }
     if (this.busy) { this.write("Agent is working. Use /status, /cancel, or /exit.\n"); return; }
     const message = rawInput.trim();
@@ -99,6 +102,7 @@ export class TerminalChat {
       this.endText();
       const marker = event.phase === "started" ? "[>]" : event.phase === "completed" ? "[ok]" : "[x]";
       this.write(`${marker} ${event.name}\n`);
+      if (event.phase === "failed" && event.error) this.write(`\x1b[2m  ${event.error}\x1b[0m\n`);
     } else if (event.type === "interaction") {
       this.endText();
       this.interaction = event.interaction;
@@ -129,7 +133,13 @@ export class TerminalChat {
   }
 
   private showHelp(): void {
-    this.write("Ordinary messages go directly to the career agent.\n/help show help  /status show session state  /cancel end session  /exit quit\n");
+    this.write("Ordinary messages go directly to the career agent.\nComplete any human takeover in the visible browser, then message the agent to continue.\n/help show help  /status show session state  /cancel end session  /resume resume the saved thread and browser  /exit quit\n");
+  }
+
+  private async resume(): Promise<void> {
+    if (this.session) { this.write(`Career session is already active on thread ${this.session.threadId}.\n`); return; }
+    this.session = await this.deps.resumeSession();
+    this.write(`Resumed thread ${this.session.threadId} and re-inspected the current browser page.\n`);
   }
 
   private async showStatus(): Promise<void> {

@@ -4,7 +4,7 @@ export type FactKey = string;
 
 /** Server-owned vocabulary permitted in persisted prompts and protected tools. */
 export const TRUSTED_FACT_KEYS = [
-  "fullName", "email", "phone", "currentLocation", "currentCompany", "noticePeriod", "idealStartMonth", "expectedSalaryRange", "applicationSource", "discoverySource", "workAuthorization", "visaDetails", "openToNewYorkOfficeThreeDaysPerWeek", "preferredCodingLanguage", "gender", "ethnicity", "ageBracket", "consentToTwoYearRetention",
+  "fullName", "firstName", "lastName", "email", "phone", "phoneDigits", "currentLocation", "currentCompany", "noticePeriod", "idealStartMonth", "expectedSalaryRange", "applicationSource", "discoverySource", "workAuthorization", "visaDetails", "openToNewYorkOfficeThreeDaysPerWeek", "preferredCodingLanguage", "gender", "ethnicity", "ageBracket", "consentToTwoYearRetention",
   "personal.name.full", "personal.email", "personal.phone", "authorization.sponsorship", "preferences.remote", "skills.primary",
 ] as const;
 export const TRUSTED_REUSABLE_ANSWER_KEYS = ["application.cover_letter", "cover"] as const;

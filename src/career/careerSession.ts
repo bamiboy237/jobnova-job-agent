@@ -1,13 +1,25 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { compactSupersededSnapshots } from "../mastra/compactSnapshots.js";
 import { getResolverModelConfig } from "../mastra/model.js";
 import { collectEnvSecrets, safeError } from "../resolver/browserSafety.js";
 import { candidateProfileToCatalog } from "../apply/candidateCatalog.js";
+import { inspectCurrentPage } from "../apply/pageInspection.js";
 import { loadCandidateProfile } from "../apply/profile.js";
-import { createRunLedger } from "../apply/runLedger.js";
+import { createRunLedger, type ApplicationRunLedger } from "../apply/runLedger.js";
 import { createCareerRuntime, type CareerMode, type CareerRuntimeState } from "./careerAgent.js";
 
 const MAX_CAREER_STEPS = 60;
+export const CAREER_SESSION_PATH = path.resolve(process.cwd(), ".career-session.json");
+
+export interface PersistedCareerSessionState {
+  threadId: string;
+  mode: CareerMode;
+  currentJobUrl?: string;
+  allowedUrls: string[];
+  completedLedgerKeys: string[];
+}
 
 export type CareerInteraction =
   | { kind: "user_input"; requestId: string; label: string; inputType: "text" | "date" | "email" | "tel" | "number" | "select" | "boolean"; description?: string; formatHint?: string; options: string[]; key: string }
@@ -18,7 +30,7 @@ export type CareerEvent =
   | { type: "session_started"; threadId: string }
   | { type: "status"; status: "thinking" | "resuming"; detail: string }
   | { type: "text_delta"; delta: string }
-  | { type: "tool"; phase: "started" | "completed" | "failed"; toolCallId: string; name: string }
+  | { type: "tool"; phase: "started" | "completed" | "failed"; toolCallId: string; name: string; error?: string }
   | { type: "interaction"; interaction: CareerInteraction }
   | { type: "error"; error: string }
   | { type: "interrupted" };
@@ -46,6 +58,8 @@ export interface CareerSessionDependencies {
   toCatalog: typeof candidateProfileToCatalog;
   createRuntime: typeof createCareerRuntime;
   createId: () => string;
+  loadSessionState: () => Promise<PersistedCareerSessionState>;
+  saveSessionState: (state: PersistedCareerSessionState) => Promise<void>;
 }
 
 const productionDependencies: CareerSessionDependencies = {
@@ -54,9 +68,48 @@ const productionDependencies: CareerSessionDependencies = {
   toCatalog: candidateProfileToCatalog,
   createRuntime: createCareerRuntime,
   createId: randomUUID,
+  loadSessionState: readCareerSessionState,
+  saveSessionState: writeCareerSessionState,
 };
 
 type PendingInteraction = { runId: string; toolCallId: string; interaction: CareerInteraction };
+
+export function serializeCareerSessionState(threadId: string, state: CareerRuntimeState): PersistedCareerSessionState {
+  return {
+    threadId,
+    mode: state.mode,
+    currentJobUrl: state.currentJobUrl,
+    allowedUrls: [...state.allowedUrls],
+    completedLedgerKeys: [...new Set(state.ledger.completed.map((item) => item.key))],
+  };
+}
+
+export function parseCareerSessionState(value: unknown): PersistedCareerSessionState {
+  if (!value || typeof value !== "object") throw new Error("Saved career session is invalid");
+  const input = value as Record<string, unknown>;
+  const modes: CareerMode[] = ["conversation", "resolving", "applying", "complete"];
+  if (typeof input.threadId !== "string" || !modes.includes(input.mode as CareerMode)
+    || !Array.isArray(input.allowedUrls) || !input.allowedUrls.every((url) => typeof url === "string")
+    || !Array.isArray(input.completedLedgerKeys) || !input.completedLedgerKeys.every((key) => typeof key === "string")
+    || (input.currentJobUrl !== undefined && typeof input.currentJobUrl !== "string")) {
+    throw new Error("Saved career session is invalid");
+  }
+  return {
+    threadId: input.threadId,
+    mode: input.mode as CareerMode,
+    currentJobUrl: input.currentJobUrl as string | undefined,
+    allowedUrls: input.allowedUrls,
+    completedLedgerKeys: input.completedLedgerKeys,
+  };
+}
+
+async function readCareerSessionState(): Promise<PersistedCareerSessionState> {
+  return parseCareerSessionState(JSON.parse(await fs.readFile(CAREER_SESSION_PATH, "utf8")));
+}
+
+async function writeCareerSessionState(state: PersistedCareerSessionState): Promise<void> {
+  await fs.writeFile(CAREER_SESSION_PATH, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
 
 function urlsIn(message: string): Set<string> {
   return new Set(message.match(/https?:\/\/[^\s"'`<>]+/gi)?.map((url) => url.replace(/[.,;)]+$/, "")) ?? []);
@@ -67,13 +120,14 @@ function isInteraction(value: unknown): value is CareerInteraction {
   return value.kind === "user_input" || value.kind === "answer_approval" || value.kind === "submission";
 }
 
-export async function createCareerSession(deps: CareerSessionDependencies = productionDependencies): Promise<CareerSession> {
+export async function createCareerSession(deps: CareerSessionDependencies = productionDependencies, options: { resume?: boolean } = {}): Promise<CareerSession> {
   const loaded = await deps.loadProfile();
   const config = deps.getConfig();
-  const threadId = deps.createId();
+  const saved = options.resume ? await deps.loadSessionState() : undefined;
+  const threadId = saved?.threadId ?? deps.createId();
   const state: CareerRuntimeState = {
     mode: "conversation",
-    allowedUrls: new Set(),
+    allowedUrls: new Set(saved?.allowedUrls),
     ledger: createRunLedger(),
     answers: new Map(),
     context: new Map(),
@@ -81,6 +135,16 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
   const catalog = loaded.ok ? deps.toCatalog(loaded.profile) : { facts: {}, reusableAnswers: {} };
   const runtime = deps.createRuntime(config, catalog, state, threadId);
   const agent = runtime.mastra.getAgentById("career-agent");
+  if (saved) {
+    runtime.browsers.actionBrowser.setCurrentThread(threadId);
+    await runtime.browsers.actionBrowser.ensureReady();
+    const page = await inspectCurrentPage(runtime.browsers.actionBrowser, [], threadId);
+    state.currentJobUrl = page.url === "about:blank" ? undefined : page.url;
+    state.mode = page.intent === "confirmation" ? "complete"
+      : page.intent === "application" ? "applying"
+        : state.currentJobUrl ? "resolving" : "conversation";
+    state.ledger.completed = restoreCompletedLedger(saved.completedLedgerKeys);
+  }
   let activeAbort: AbortController | undefined;
   let activeTurn: Promise<void> | undefined;
   let pending: PendingInteraction | undefined;
@@ -99,10 +163,12 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
       if (chunk.type === "text-delta") yield { type: "text_delta", delta: chunk.payload.text };
       else if (chunk.type === "tool-call") yield { type: "tool", phase: "started", toolCallId: chunk.payload.toolCallId, name: chunk.payload.toolName };
       else if (chunk.type === "tool-result") {
-        const logicalFailure = chunk.payload.result && typeof chunk.payload.result === "object" && "success" in chunk.payload.result && chunk.payload.result.success === false;
-        yield { type: "tool", phase: chunk.payload.isError || logicalFailure ? "failed" : "completed", toolCallId: chunk.payload.toolCallId, name: chunk.payload.toolName };
+        const result = chunk.payload.result;
+        const logicalFailure = result && typeof result === "object" && "success" in result && result.success === false;
+        const error = result && typeof result === "object" && "error" in result && typeof result.error === "string" ? result.error : undefined;
+        yield { type: "tool", phase: chunk.payload.isError || logicalFailure ? "failed" : "completed", toolCallId: chunk.payload.toolCallId, name: chunk.payload.toolName, error };
       }
-      else if (chunk.type === "tool-error") yield { type: "tool", phase: "failed", toolCallId: chunk.payload.toolCallId, name: chunk.payload.toolName };
+      else if (chunk.type === "tool-error") yield { type: "tool", phase: "failed", toolCallId: chunk.payload.toolCallId, name: chunk.payload.toolName, error: safeError(chunk.payload.error, [...collectEnvSecrets(), ...config.secrets]) };
       else if (chunk.type === "tool-call-suspended" && isInteraction(chunk.payload.suspendPayload)) {
         pending = { runId, toolCallId: chunk.payload.toolCallId, interaction: chunk.payload.suspendPayload };
         yield { type: "interaction", interaction: chunk.payload.suspendPayload };
@@ -134,6 +200,7 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
       activeAbort = undefined;
       activeTurn = undefined;
       finish();
+      await deps.saveSessionState(serializeCareerSessionState(threadId, state));
     }
   };
 
@@ -190,4 +257,16 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
     interrupt,
     close,
   };
+}
+
+export function resumeCareerSession(): Promise<CareerSession> {
+  return createCareerSession(productionDependencies, { resume: true });
+}
+
+function restoreCompletedLedger(keys: string[]): ApplicationRunLedger["completed"] {
+  return keys.map((key, index) => ({
+    identity: `resumed:${index}`,
+    source: key.startsWith("context.") ? "answer" as const : key === "primary" ? "resume" as const : "fact" as const,
+    key,
+  }));
 }

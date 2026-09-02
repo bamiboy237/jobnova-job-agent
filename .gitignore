@@ -13,6 +13,7 @@ output/
 .local-chrome-profile/
 .local-browser-state.json
 mastra.db*
+.career-session.json
 
 # Candidate data & resumes (per AGENTS.md)
 data/candidate/*

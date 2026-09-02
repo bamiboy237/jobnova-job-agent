@@ -91,7 +91,21 @@ export async function selectCustomOptionRef(browser: AgentBrowser, ref: string, 
   await options.nth(matches[0]).click();
 }
 export async function clickControlRef(browser: AgentBrowser, ref: string, threadId?: string): Promise<void> {
-  await (await requiredLocator(browser, ref, threadId)).click();
+  const locator = await requiredLocator(browser, ref, threadId);
+  const before = await locator.evaluate(inspectElement, 0);
+  if (before?.kind !== "checkbox" && before?.kind !== "radio") {
+    await locator.click();
+    return;
+  }
+
+  await locator.click().catch(() => {});
+  const afterClick = await locator.evaluate(inspectElement, 0).catch(() => undefined);
+  if (afterClick && afterClick.filled !== before.filled) return;
+
+  await locator.focus();
+  await locator.press("Space");
+  const afterKeyboard = await locator.evaluate(inspectElement, 0).catch(() => undefined);
+  if (!afterKeyboard || afterKeyboard.filled === before.filled) throw new Error("Control mutation failed");
 }
 /** Controller-only fallback when a fresh inspection has no snapshot ref. */
 export async function clickUniqueButtonLabel(browser: AgentBrowser, label: string, threadId?: string): Promise<void> {

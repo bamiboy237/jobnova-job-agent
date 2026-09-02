@@ -147,14 +147,14 @@ export function createGeneralApplicationTools(browser: AgentBrowser, catalog: Ca
       const threadId = thread(agent); const before = await inspectCurrentPage(browser, [], threadId); const control = await inspectControlRef(browser, ref, threadId);
       const reversible = control && (control.kind === "checkbox" || control.kind === "radio" || control.kind === "option" || (control.kind === "button" && control.progression === "previous"));
       if (!control || !control.visible || !control.enabled || !reversible || control.kind === "file" || control.progression === "final-submit" || isFinalControl(control)) return { success: false, ref, error: "Control is not a permitted reversible action" };
-      if (ledger && ledger.latest?.action === `click:${control.identity}` && !ledger.latest.changed && ledger.noProgressCount >= 1) return { success: false, ref, error: "Repeated no-progress reversible transition blocked" };
+      if (ledger && ledger.latest?.action === `click:${control.identity}` && !ledger.latest.changed && ledger.latest.after === before.fingerprint && ledger.noProgressCount >= 1) return { success: false, ref, error: "Repeated no-progress reversible transition blocked" };
       try { await clickControlRef(browser, ref, threadId); const after = await inspectCurrentPage(browser, [], threadId); const changed = ledger ? recordTransition(ledger, `click:${control.identity}`, before.fingerprint, after.fingerprint) : before.fingerprint !== after.fingerprint; return { success: true, ref, changed }; } catch { return { success: false, ref, error: "Control mutation failed" }; }
     }}),
     advance_step: createTool({ id: "advance_step", description: "Advance through one enabled control labelled exactly Next only after visible required controls are complete.", inputSchema: z.object({ ref: z.string() }), execute: async ({ ref }, { agent }) => {
       const threadId = thread(agent); const before = await inspectCurrentPage(browser, [], threadId); const control = await inspectControlRef(browser, ref, threadId);
       if (before.unsupportedVisibleFrameCount) return { success: false, ref, error: "Visible embedded frame is unsupported" };
       if (!control || !control.visible || !control.enabled || control.progression !== "next") return { success: false, ref, error: "Control is not an unambiguous next-step action" };
-      if (ledger && ledger.latest?.action === `advance:${control.identity}` && !ledger.latest.changed && ledger.noProgressCount >= 1) return { success: false, ref, error: "Repeated no-progress step advance blocked" };
+      if (ledger && ledger.latest?.action === `advance:${control.identity}` && !ledger.latest.changed && ledger.latest.after === before.fingerprint && ledger.noProgressCount >= 1) return { success: false, ref, error: "Repeated no-progress step advance blocked" };
       const gaps = before.controls.filter((item) => item.visible && item.enabled && item.required && !item.filled); if (gaps.length) return { success: false, ref, error: "Visible required controls remain incomplete", missingRequired: gaps.map((item) => item.identity) };
       if (ledger) recordValidatedStep(ledger, before.fingerprint);
       try { await clickControlRef(browser, ref, threadId); const after = await inspectCurrentPage(browser, [], threadId); const changed = ledger ? recordTransition(ledger, `advance:${control.identity}`, before.fingerprint, after.fingerprint) : before.fingerprint !== after.fingerprint; return { success: true, ref, changed }; } catch { return { success: false, ref, error: "Control mutation failed" }; }
@@ -164,7 +164,7 @@ export function createGeneralApplicationTools(browser: AgentBrowser, catalog: Ca
       const candidates = before.controls.filter((item) => item.visible && item.enabled && item.kind === "button" && /^(sign in|log in|login)$/i.test(item.label));
       if (before.intent !== "authentication" || before.authenticationMode !== "login" || before.unsupportedVisibleFrameCount || !ledger?.completed.some((item) => item.source === "credential") || candidates.length !== 1 || !control || control.identity !== candidates[0].identity) return { success: false, ref, error: "Authentication submission is not safely available" };
       if (before.controls.some((item) => item.visible && item.required && !item.filled)) return { success: false, ref, error: "Visible required controls remain incomplete" };
-      if (ledger.latest?.action === `auth:${control.identity}` && !ledger.latest.changed) return { success: false, ref, error: "Repeated no-progress authentication blocked" };
+      if (ledger.latest?.action === `auth:${control.identity}` && !ledger.latest.changed && ledger.latest.after === before.fingerprint) return { success: false, ref, error: "Repeated no-progress authentication blocked" };
       try { await clickControlRef(browser, ref, threadId); const after = await inspectCurrentPage(browser, [], threadId); return { success: true, ref, changed: recordTransition(ledger, `auth:${control.identity}`, before.fingerprint, after.fingerprint) }; } catch { return { success: false, ref, error: "Authentication click outcome is uncertain" }; }
     }}),
   };

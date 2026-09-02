@@ -112,7 +112,7 @@ function bindAnswer(state: CareerRuntimeState, control: PageControl, value: stri
 }
 
 export function createCareerRuntime(modelConfig: ResolverModelConfig, catalog: CandidateFactCatalog, state: CareerRuntimeState, sessionId: string) {
-  const browsers = createResolverBrowsers(modelConfig.browserModel, false);
+  const browsers = createResolverBrowsers(modelConfig.browserModel, false, process.env.BROWSER_PROVIDER === "local");
   installDialogAutoDismiss(browsers.actionBrowser);
   const answerStore: InteractiveAnswerStore = { resolve: (answerId) => state.answers.get(answerId) };
   const applicationTools = createGeneralApplicationTools(browsers.actionBrowser, catalog, undefined, ledgerProxy(state), answerStore);
@@ -145,6 +145,19 @@ export function createCareerRuntime(modelConfig: ResolverModelConfig, catalog: C
   const thread = (agent?: { threadId?: string }) => {
     browsers.actionBrowser.setCurrentThread(agent?.threadId);
     return agent?.threadId;
+  };
+  const syncStagehandPage = async (agent?: { threadId?: string }) => {
+    const threadId = thread(agent);
+    browsers.interpretationBrowser.setCurrentThread(threadId);
+    await browsers.interpretationBrowser.ensureReady();
+    const actionManager = await browsers.actionBrowser.getManagerForThread(threadId);
+    const stagehand = await browsers.interpretationBrowser.getManagerForThread(threadId);
+    const context = stagehand?.context;
+    if (!context) return;
+    const actionPage = actionManager.getPage();
+    const target = context.pages().find((page) => page.url() === actionPage.url())
+      ?? context.pages()[actionManager.getActiveIndex()];
+    if (target && target !== context.activePage()) context.setActivePage(target);
   };
   const requireApplicationControl = async (ref: string, agent?: { threadId?: string }) => {
     if (state.mode !== "applying") return { error: "Secure input is available only on an application", control: undefined };
@@ -280,9 +293,13 @@ export function createCareerRuntime(modelConfig: ResolverModelConfig, catalog: C
       id: name,
       description: tool.description,
       inputSchema: tool.inputSchema as never,
-      execute: async (input, context) => canUseStagehand(state.mode, state.ledger.completed.some((completion) => completion.source === "answer" && completion.key.startsWith("context.")))
-        ? tool.execute!(input, context as never)
-        : { success: false, error: `${name} is unavailable after private application data can be entered` },
+      execute: async (input, context) => {
+        if (!canUseStagehand(state.mode, state.ledger.completed.some((completion) => completion.source === "answer" && completion.key.startsWith("context.")))) {
+          return { success: false, error: `${name} is unavailable after private application data can be entered` };
+        }
+        await syncStagehandPage(context.agent);
+        return tool.execute!(input, context as never);
+      },
     })];
   }));
   const careerAgent = new Agent({

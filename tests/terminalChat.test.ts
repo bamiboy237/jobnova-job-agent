@@ -17,7 +17,8 @@ function setup(options: { send?: (message: string) => CareerEvent[]; respond?: (
     interrupt: () => { interrupts += 1; },
     close: async () => { closes += 1; },
   };
-  const deps: TerminalClientDependencies = { createSession: async () => { creates += 1; return session; } };
+  const create = async () => { creates += 1; return session; };
+  const deps: TerminalClientDependencies = { createSession: create, resumeSession: create };
   let output = "";
   const client = new TerminalChat({ deps, output: { write: (value: string) => { output += value; return true; } } as never });
   return { client, messages, responses, output: () => output, counts: () => ({ creates, closes, interrupts }) };
@@ -27,6 +28,7 @@ describe("career-agent terminal interaction layer", () => {
   it("keeps only lifecycle slash commands local", () => {
     expect(parseClientCommand("/status")).toBe("status");
     expect(parseClientCommand("/cancel")).toBe("cancel");
+    expect(parseClientCommand("/resume")).toBe("resume");
     expect(parseClientCommand("/submit")).toBeUndefined();
     expect(parseClientCommand("hey")).toBeUndefined();
   });
@@ -34,9 +36,10 @@ describe("career-agent terminal interaction layer", () => {
   it("forwards pre-URL conversation and sequential job messages to one session", async () => {
     const fixture = setup({ send: (message) => message.startsWith("Apply") ? [
       { type: "tool", phase: "started", toolCallId: "job-1", name: "open_supplied_job" },
-      { type: "tool", phase: "completed", toolCallId: "job-1", name: "open_supplied_job" },
+      { type: "tool", phase: "failed", toolCallId: "job-1", name: "open_supplied_job", error: "Current page did not change" },
       { type: "text_delta", delta: "I opened that job." },
     ] : [{ type: "text_delta", delta: "Hey. What are you working toward?" }] });
+    await fixture.client.handleInput("/resume");
     await fixture.client.handleInput("hey");
     await fixture.client.handleInput("Apply to https://jobs.example.test/one");
     await fixture.client.handleInput("Apply to https://jobs.example.test/two");
@@ -44,6 +47,7 @@ describe("career-agent terminal interaction layer", () => {
     expect(fixture.messages).toEqual(["hey", "Apply to https://jobs.example.test/one", "Apply to https://jobs.example.test/two"]);
     expect(fixture.output()).toContain("Hey. What are you working toward?");
     expect(fixture.output()).toContain("[>] open_supplied_job");
+    expect(fixture.output()).toContain("Current page did not change");
     await fixture.client.close();
   });
 

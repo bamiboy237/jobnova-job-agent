@@ -73,10 +73,13 @@ describe("general protected tool boundaries", () => {
   it("sets boolean checkbox and Yes/No radio state idempotently", async () => {
     let clicks = 0;
     const page = { url: () => "http://localhost/fixture" };
-    const browserFor = (state: PageControl) => ({ getManagerForThread: async () => ({
+    const browserFor = (state: PageControl) => {
+      let current = state;
+      return { getManagerForThread: async () => ({
       getPage: () => page,
-      getLocatorFromRef: () => ({ evaluate: async () => state, click: async () => { clicks += 1; } }),
-    }) });
+      getLocatorFromRef: () => ({ evaluate: async () => current, click: async () => { clicks += 1; current = { ...current, filled: !current.filled }; } }),
+    }) };
+    };
     const checkbox = createGeneralApplicationTools(browserFor(control({ kind: "checkbox", filled: false })) as never, catalog);
     expect(await checkbox.choose_fact_option.execute({ ref: "@check", factKey: "authorization.sponsorship" }, {} as never)).toMatchObject({ success: true });
     expect(clicks).toBe(0); // false checkbox is already the requested state
@@ -96,7 +99,7 @@ describe("general protected tool boundaries", () => {
     expect(result).toEqual({ success: false, ref: "@file", error: "Requested resume ID is unavailable. Use the exact ID from application_capabilities." });
   });
 
-  it("fills an interactive answer only on its bound control without returning its value", async () => {
+  it("fills text and boolean interactive answers only on their bound controls without returning values", async () => {
     let filled = "";
     const bound = control({ identity: "id:question", snapshotRef: "@bound" });
     const other = control({ identity: "id:other", snapshotRef: "@other" });
@@ -107,13 +110,27 @@ describe("general protected tool boundaries", () => {
     expect(filled).toBe("private answer");
     expect(JSON.stringify(result)).not.toContain("private answer");
     expect(await tools.fill_interactive_answer.execute({ ref: "@other", answerId: "interactive.1" }, {} as never)).toMatchObject({ success: false });
+
+    let checked = false; let keyboardFallbacks = 0;
+    const checkbox = control({ identity: "id:consent", kind: "checkbox", filled: false, snapshotRef: "@consent" });
+    const checkboxBrowser = { getManagerForThread: async () => ({ getPage: () => ({ url: () => "http://localhost/fixture" }), getLocatorFromRef: () => ({
+      evaluate: async () => ({ ...checkbox, filled: checked }),
+      click: async () => { throw new Error("Link intercepted pointer"); },
+      focus: async () => undefined,
+      press: async (key: string) => { if (key === "Space") { checked = true; keyboardFallbacks += 1; } },
+    }) }) };
+    const checkboxTools = createGeneralApplicationTools(checkboxBrowser as never, catalog, undefined, undefined, { resolve: () => ({ value: "yes", identity: "id:consent", kind: "checkbox" }) });
+    expect(await checkboxTools.fill_interactive_answer.execute({ ref: "@consent", answerId: "interactive.consent" }, {} as never)).toEqual({ success: true, ref: "@consent", answerId: "interactive.consent" });
+    expect(checked).toBe(true);
+    expect(keyboardFallbacks).toBe(1);
   });
 
   it("reveals only requested facts and requires lookup for semantic option mapping", async () => {
     let clicks = 0; let selected = "";
     const radio = control({ kind: "radio", label: "Eligible to work", identity: "id:work" });
     const select = control({ kind: "select", options: ["United States", "Canada"], identity: "id:country" });
-    const browser = { getManagerForThread: async () => ({ getPage: () => ({ url: () => "http://localhost/fixture" }), getLocatorFromRef: (ref: string) => ({ evaluate: async () => ref === "@radio" ? radio : select, click: async () => { clicks += 1; }, selectOption: async ({ label }: { label: string }) => { selected = label; } }) }) };
+    let radioFilled = false;
+    const browser = { getManagerForThread: async () => ({ getPage: () => ({ url: () => "http://localhost/fixture" }), getLocatorFromRef: (ref: string) => ({ evaluate: async () => ref === "@radio" ? { ...radio, filled: radioFilled } : select, click: async () => { clicks += 1; radioFilled = true; }, selectOption: async ({ label }: { label: string }) => { selected = label; } }) }) };
     const tools = createGeneralApplicationTools(browser as never, { facts: { workAuthorization: "authorized", currentLocation: "US" }, reusableAnswers: {} });
     expect(await tools.choose_fact_option.execute({ ref: "@radio", factKey: "workAuthorization" }, {} as never)).toMatchObject({ success: false });
     expect(await tools.lookup_candidate_fact.execute({ factKey: "workAuthorization" }, {} as never)).toEqual({ success: true, factKey: "workAuthorization", value: "authorized" });

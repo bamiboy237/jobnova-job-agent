@@ -9,7 +9,12 @@ import { resolveApprovedResume } from "../src/apply/resume.js";
 describe("general application inputs", () => {
   it("converts only trusted candidate facts", () => {
     const profile = createSyntheticProfile();
-    const catalog = candidateProfileToCatalog({ ...profile, extra: "no" } as never); expect(catalog.facts).toHaveProperty("email"); expect(catalog.facts).not.toHaveProperty("isSynthetic"); expect(catalog.facts).not.toHaveProperty("extra"); expect(catalog.approvedResumeId).toBe("primary");
+    const catalog = candidateProfileToCatalog({ ...profile, extra: "no" } as never);
+    expect(catalog.facts).toMatchObject({ firstName: "Taylor", lastName: "Alex Sample", phoneDigits: "5550104242" });
+    expect(catalog.facts).toHaveProperty("email");
+    expect(catalog.facts).not.toHaveProperty("isSynthetic");
+    expect(catalog.facts).not.toHaveProperty("extra");
+    expect(catalog.approvedResumeId).toBe("primary");
   });
   it("loads complete private input and rejects incomplete input", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "candidate-"));
