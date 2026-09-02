@@ -33,6 +33,17 @@ export interface CandidateProfile {
   ethnicity: "Prefer not to say";
   ageBracket: "Prefer not to say";
   consentToTwoYearRetention: boolean;
+  degree: string;
+  school: string;
+  fieldOfStudy: string;
+  graduationYear: number;
+  gpa: string;
+  hasGovernmentExperience: boolean;
+  requiresSponsorship: boolean;
+  hasValidWorkPermit: boolean;
+  hasValidResidencyPermit: boolean;
+  hasNonCompeteRestrictions: boolean;
+  sponsorshipCountries: string;
   approvedResumeId: "primary";
 }
 
@@ -60,6 +71,17 @@ const StoredCandidateProfileSchema = z.object({
   ethnicity: z.literal("Prefer not to say"),
   ageBracket: z.literal("Prefer not to say"),
   consentToTwoYearRetention: z.boolean(),
+  degree: z.string().min(1),
+  school: z.string().min(1),
+  fieldOfStudy: z.string().min(1),
+  graduationYear: z.number().int(),
+  gpa: z.string().min(1),
+  hasGovernmentExperience: z.boolean(),
+  requiresSponsorship: z.boolean(),
+  hasValidWorkPermit: z.boolean(),
+  hasValidResidencyPermit: z.boolean(),
+  hasNonCompeteRestrictions: z.boolean(),
+  sponsorshipCountries: z.string().min(1),
   approvedResumeId: z.literal("primary"),
 });
 
@@ -103,6 +125,17 @@ export function createSyntheticProfile(): SyntheticCandidateProfile {
     ethnicity: "Prefer not to say",
     ageBracket: "Prefer not to say",
     consentToTwoYearRetention: true,
+    degree: "Bachelors",
+    school: "Example State University",
+    fieldOfStudy: "Computer Science",
+    graduationYear: 2022,
+    gpa: "3.7",
+    hasGovernmentExperience: false,
+    requiresSponsorship: false,
+    hasValidWorkPermit: true,
+    hasValidResidencyPermit: true,
+    hasNonCompeteRestrictions: false,
+    sponsorshipCountries: "Not applicable",
     approvedResumeId: "primary",
   };
 }

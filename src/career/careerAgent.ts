@@ -81,6 +81,10 @@ export function canUseStagehand(mode: CareerMode, privateInputEntered = false): 
   return mode === "resolving" || (mode === "applying" && !privateInputEntered);
 }
 
+export function findControlByIdentity(controls: PageControl[], identity: string): PageControl | undefined {
+  return controls.find((control) => control.identity === identity);
+}
+
 export function secureInputMetadata(control: PageControl, inputType: SavedContextField["inputType"]): Pick<SavedContextField, "label" | "inputType"> & { options: string[] } | undefined {
   const compatible = control.kind === "select" ? inputType === "select"
     : control.kind === "checkbox" ? inputType === "boolean"
@@ -118,6 +122,7 @@ export function createCareerRuntime(modelConfig: ResolverModelConfig, catalog: C
   installDialogAutoDismiss(browsers.actionBrowser);
   const answerStore: InteractiveAnswerStore = { resolve: (answerId) => state.answers.get(answerId) };
   const applicationTools = createGeneralApplicationTools(browsers.actionBrowser, catalog, undefined, ledgerProxy(state), answerStore);
+  const controlIdentityByToolCall = new Map<string, string>();
   const guardedApplicationTools = Object.fromEntries(Object.entries(applicationTools).map(([name, tool]) => [name, createTool({
     id: name,
     description: tool.description,
@@ -161,10 +166,15 @@ export function createCareerRuntime(modelConfig: ResolverModelConfig, catalog: C
       ?? context.pages()[actionManager.getActiveIndex()];
     if (target && target !== context.activePage()) context.setActivePage(target);
   };
-  const requireApplicationControl = async (ref: string, agent?: { threadId?: string }) => {
+  const requireApplicationControl = async (ref: string, agent?: { threadId?: string; toolCallId?: string }) => {
     if (state.mode !== "applying") return { error: "Secure input is available only on an application", control: undefined };
-    const control = await inspectControlRef(browsers.actionBrowser, ref, thread(agent));
+    const threadId = thread(agent);
+    const savedIdentity = agent?.toolCallId ? controlIdentityByToolCall.get(agent.toolCallId) : undefined;
+    const current = savedIdentity ? await inspectCurrentPage(browsers.actionBrowser, [], threadId) : undefined;
+    const stableControl = current && savedIdentity ? findControlByIdentity(current.controls, savedIdentity) : undefined;
+    const control = stableControl ?? await inspectControlRef(browsers.actionBrowser, ref, threadId);
     if (!control || !control.visible || !control.enabled) return { error: "The requested application control is stale or unavailable", control: undefined };
+    if (agent?.toolCallId) controlIdentityByToolCall.set(agent.toolCallId, control.identity);
     return { control };
   };
   const careerTools = {

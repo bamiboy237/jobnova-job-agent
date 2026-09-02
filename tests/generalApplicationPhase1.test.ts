@@ -33,11 +33,15 @@ describe("general application Phase 1 pure boundaries", () => {
     expect(resolveReusableAnswer(catalog, "cover")).toMatchObject({ ok: false, error: "Missing approved fact: reusable.cover" });
   });
 
-  it("requires one exact normalized option match", () => {
+  it("prefers exact options and accepts only one contained fallback", () => {
     expect(exactOptionMatch(["Python", "R"], " python ")).toBe("Python");
     expect(exactOptionMatch(["Yes", " yes "], true)).toBeUndefined();
     expect(exactOptionMatch(["Yes", " yes "], "yes")).toBeUndefined();
     expect(exactOptionMatch(["No"], "Yes")).toBeUndefined();
+    expect(exactOptionMatch(["Bachelors (±16 years of education)", "Masters"], "Bachelors")).toBe("Bachelors (±16 years of education)");
+    expect(exactOptionMatch(["Bachelors (16 years)", "Bachelors (15 years)"], "Bachelors")).toBeUndefined();
+    expect(exactOptionMatch(["Yes", "No"], true)).toBe("Yes");
+    expect(exactOptionMatch(["Yes", "No"], false)).toBe("No");
   });
 
   it("classifies visible gaps, control progression, page intent, and value-free fingerprints", () => {
@@ -90,6 +94,23 @@ describe("general protected tool boundaries", () => {
     const noRadio = createGeneralApplicationTools(browserFor(control({ kind: "radio", label: "No", filled: true })) as never, catalog);
     expect(await noRadio.choose_fact_option.execute({ ref: "@no", factKey: "authorization.sponsorship" }, {} as never)).toMatchObject({ success: true });
     expect(clicks).toBe(1);
+  });
+
+  it("sets a boolean fact on a long-label Yes/No select", async () => {
+    let selected = "";
+    const longLabel = `Do you currently have authorization to work in this country? ${"Additional employer context. ".repeat(10)}`;
+    const select = control({ kind: "select", label: longLabel, options: ["Yes", "No"] });
+    const browser = { getManagerForThread: async () => ({
+      getPage: () => ({ url: () => "http://localhost/fixture" }),
+      getLocatorFromRef: () => ({
+        evaluate: async () => select,
+        selectOption: async ({ label }: { label: string }) => { selected = label; },
+      }),
+    }) };
+    const tools = createGeneralApplicationTools(browser as never, catalog);
+
+    expect(await tools.choose_fact_option.execute({ ref: "@authorization", factKey: "preferences.remote" }, {} as never)).toMatchObject({ success: true });
+    expect(selected).toBe("Yes");
   });
 
   it("rejects a resume ID that differs from the catalog approval before filesystem access", async () => {

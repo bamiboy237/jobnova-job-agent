@@ -20,6 +20,7 @@ mastra.db*
 # Candidate data & resumes (per AGENTS.md)
 data/candidate/*
 !data/candidate/README.md
+!data/candidate/profile.example.json
 *.pdf
 
 # BEGIN oh-my-opencode-slim clonedeps

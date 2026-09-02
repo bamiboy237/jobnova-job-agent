@@ -58,11 +58,17 @@ export function normalizeOption(value: string): string {
   return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
 }
 
-/** Returns an option only when normalized text has exactly one match. */
+/** Returns an exact or uniquely contained normalized option. */
 export function exactOptionMatch(options: string[], value: string | boolean | number): string | undefined {
-  const target = normalizeOption(String(value));
-  const matches = options.filter((option) => normalizeOption(option) === target);
-  return matches.length === 1 ? matches[0] : undefined;
+  const target = normalizeOption(typeof value === "boolean" ? value ? "Yes" : "No" : String(value));
+  const exact = options.filter((option) => normalizeOption(option) === target);
+  if (exact.length > 0) return exact.length === 1 ? exact[0] : undefined;
+  if (target.length < 3) return undefined;
+  const contained = options.filter((option) => {
+    const normalized = normalizeOption(option);
+    return normalized.length >= 3 && (normalized.includes(target) || target.includes(normalized));
+  });
+  return contained.length === 1 ? contained[0] : undefined;
 }
 
 export function requiredGaps(controls: PageControl[]): PageControl[] {

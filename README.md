@@ -131,6 +131,7 @@ All routes require `x-access-code: <ACCESS_CODE>`.
 ## Limits
 
 - The application proof covers one Lever flow, not every ATS.
+- After private data enters an application, Stagehand interpretation stays disabled. Unclear long-label controls can still require user input rather than exposing filled page state to a model.
 - LinkedIn uses the owner’s persistent Browserbase context. LinkedIn checkpoints or expired authentication block the run cleanly.
 - The server uses one always-on process and an in-memory chat-session map. It is not designed for horizontal scaling.
 - The invite code is a take-home access gate, not account security.
