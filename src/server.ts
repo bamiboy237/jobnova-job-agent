@@ -177,7 +177,7 @@ export async function createJobnovaServer(options: {
         return json(response, 200, { ended: true });
       }
 
-      if (request.method === "GET") return serveStatic(url.pathname, response);
+      if (request.method === "GET" || request.method === "HEAD") return serveStatic(url.pathname, response, request.method);
       return json(response, 404, { error: "Not found" });
     } catch (error) {
       return json(response, 500, { error: safeError(error, collectEnvSecrets()) });
@@ -205,11 +205,13 @@ function screenshotUrls(screenshots: string[] | undefined): string[] {
     .map((screenshot) => `/api/screenshots/${encodeURIComponent(path.basename(screenshot))}`);
 }
 
-async function serveScreenshot(requestedName: string, response: ServerResponse): Promise<void> {
-  const decoded = decodeURIComponent(requestedName);
-  if (decoded !== path.basename(decoded) || !decoded.endsWith(".png")) return json(response, 404, { error: "Screenshot not found" });
-  const target = path.resolve(SCREENSHOTS_DIRECTORY, decoded);
-  if (path.dirname(target) !== SCREENSHOTS_DIRECTORY) return json(response, 404, { error: "Screenshot not found" });
+async function serveScreenshot(requestPath: string, response: ServerResponse): Promise<void> {
+  const relative = decodeURIComponent(requestPath.replace(/^\/api\/screenshots\//, ""));
+  if (relative !== path.normalize(relative) || relative.startsWith("..") || path.isAbsolute(relative)) {
+    return json(response, 404, { error: "Not found" });
+  }
+  const target = path.resolve(SCREENSHOTS_DIRECTORY, relative);
+  if (!target.startsWith(`${SCREENSHOTS_DIRECTORY}${path.sep}`)) return json(response, 404, { error: "Not found" });
   try {
     const body = await fs.readFile(target);
     response.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "private, max-age=300" });
@@ -219,7 +221,7 @@ async function serveScreenshot(requestedName: string, response: ServerResponse):
   }
 }
 
-async function serveStatic(requestPath: string, response: ServerResponse): Promise<void> {
+async function serveStatic(requestPath: string, response: ServerResponse, method = "GET"): Promise<void> {
   const relative = requestPath === "/" ? "index.html" : decodeURIComponent(requestPath.slice(1));
   if (relative !== path.normalize(relative) || relative.startsWith("..") || path.isAbsolute(relative)) {
     return json(response, 404, { error: "Not found" });
@@ -227,12 +229,18 @@ async function serveStatic(requestPath: string, response: ServerResponse): Promi
   const target = path.resolve(PUBLIC_DIRECTORY, relative);
   if (!target.startsWith(`${PUBLIC_DIRECTORY}${path.sep}`)) return json(response, 404, { error: "Not found" });
   try {
-    const body = await fs.readFile(target);
     const extension = path.extname(target);
     const contentType = extension === ".html" ? "text/html; charset=utf-8"
       : extension === ".css" ? "text/css; charset=utf-8"
         : extension === ".js" ? "text/javascript; charset=utf-8"
           : "application/octet-stream";
+    if (method === "HEAD") {
+      const stat = await fs.stat(target);
+      response.writeHead(200, { "Content-Type": contentType, "Content-Length": stat.size });
+      response.end();
+      return;
+    }
+    const body = await fs.readFile(target);
     response.writeHead(200, { "Content-Type": contentType });
     response.end(body);
   } catch {
@@ -269,10 +277,23 @@ function json(response: ServerResponse, status: number, body: unknown): void {
   response.end(JSON.stringify(body));
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+const isEntrypoint = Boolean(
+  process.argv[1] &&
+  (fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) ||
+   path.resolve(process.argv[1]).endsWith("dist/server.js") ||
+   path.resolve(process.argv[1]).endsWith("src/server.ts"))
+);
+
+if (isEntrypoint) {
   const port = Number(process.env.PORT || 3000);
-  const server = await createJobnovaServer();
-  server.listen(port, "0.0.0.0", () => {
-    console.log(`[SERVER] Jobnova listening on port ${port}`);
-  });
+  console.log(`[SERVER] Initializing Jobnova server on port ${port}...`);
+  try {
+    const server = await createJobnovaServer();
+    server.listen(port, "0.0.0.0", () => {
+      console.log(`[SERVER] Jobnova listening on 0.0.0.0:${port}`);
+    });
+  } catch (error) {
+    console.error("[SERVER FATAL] Failed to start server:", error);
+    process.exit(1);
+  }
 }

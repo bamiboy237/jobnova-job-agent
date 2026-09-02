@@ -12,6 +12,7 @@
     "build:server": "tsc",
     "build:web": "next build web",
     "test": "vitest run",
+    "start": "node dist/server.js",
     "serve": "node dist/server.js",
     "resolve": "tsx src/index.ts",
     "auth": "tsx src/auth.ts",
