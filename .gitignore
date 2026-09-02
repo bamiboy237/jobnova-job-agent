@@ -29,3 +29,5 @@ data/candidate/*
 
 # Deepwork session state
 .slim/deepwork/
+.agents/
+.delta/
