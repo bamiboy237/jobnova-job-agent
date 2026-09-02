@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
+import { StreamErrorRetryProcessor } from "@mastra/core/processors";
 import { createTool } from "@mastra/core/tools";
 import { Memory } from "@mastra/memory";
 import { z } from "zod";
 import type { ResolverModelConfig } from "../mastra/model.js";
+import { isRateLimitError, rateLimitRetryDelayMs } from "../mastra/rateLimitRetry.js";
 import { getMastraStorage } from "../mastra/storage.js";
 import { createResolverBrowsers } from "../mastra/resolverBrowser.js";
 import { installDialogAutoDismiss } from "../browser/cdpSession.js";
@@ -315,8 +317,20 @@ export function createCareerRuntime(modelConfig: ResolverModelConfig, catalog: C
       ...guardedApplicationTools,
       ...careerTools,
     },
-    maxRetries: 1,
-    maxProcessorRetries: 0,
+    errorProcessors: [new StreamErrorRetryProcessor({
+      maxRetries: 2,
+      delayMs: ({ retryCount }) => [5_000, 15_000][Math.min(retryCount, 1)],
+      matchers: [{
+        match: isRateLimitError,
+        maxRetries: 3,
+        delayMs: ({ error, retryCount }) => rateLimitRetryDelayMs(error, retryCount),
+        onRetry: ({ delayMs }) => {
+          console.warn(`[AGENT] Model rate limited; retrying in ${Math.ceil(delayMs / 1_000)}s`);
+        },
+      }],
+    })],
+    maxRetries: 0,
+    maxProcessorRetries: 3,
   });
   const mastra = new Mastra({
     storage: getMastraStorage(),
