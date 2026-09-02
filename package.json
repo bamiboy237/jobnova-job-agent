@@ -4,6 +4,9 @@
   "description": "Server-side job agent resolving LinkedIn listings and submitting ATS applications",
   "type": "module",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "npm run build:server && npm run build:web",
     "build:server": "tsc",
