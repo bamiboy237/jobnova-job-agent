@@ -5,6 +5,8 @@
 # Node
 node_modules/
 dist/
+web/.next/
+web/out/
 
 # Logs & Output
 *.log

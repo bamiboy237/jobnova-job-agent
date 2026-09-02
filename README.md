@@ -17,6 +17,8 @@ To test the core flow in about 30 seconds:
 
 The deployed service requires its invite code on every API request. Completed resolver runs persist across process restarts.
 
+The phone-friendly interface uses the Vercel AI SDK `useChat` hook with a custom transport for Jobnova’s server-sent career events. Assistant text streams into normal text parts. Browser-tool states and private interaction requests become typed data parts. Private card responses resume the active server turn without becoming chat messages.
+
 ## Results
 
 ### Frozen resolver evaluation
@@ -107,7 +109,7 @@ Leave `BROWSER_PROVIDER` unset in Railway. Run `npm run auth` once with the prod
 
 | Command | Purpose |
 |---|---|
-| `npm run serve` | Start the built HTTP service and static web app |
+| `npm run serve` | Start the built HTTP service and exported Next.js chat app |
 | `npm run resolve -- <linkedin-url>` | Run the one-shot resolver CLI |
 | `npm run apply:chat` | Run the terminal career chat |
 | `npm run auth` | Authenticate the configured browser context |

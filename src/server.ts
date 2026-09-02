@@ -12,7 +12,7 @@ import { RunStore } from "./server/runStore.js";
 
 const MAX_LIVE_BROWSERS = 2;
 const SESSION_IDLE_MS = 10 * 60 * 1_000;
-const PUBLIC_DIRECTORY = path.resolve(process.cwd(), "public");
+const PUBLIC_DIRECTORY = path.resolve(process.cwd(), "web", "out");
 const SCREENSHOTS_DIRECTORY = path.resolve(process.env.SCREENSHOTS_DIR || path.join(process.cwd(), "screenshots"));
 
 interface WebCareerSession {
