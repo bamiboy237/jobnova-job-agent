@@ -21,8 +21,18 @@ export interface PersistedCareerSessionState {
   completedLedgerKeys: string[];
 }
 
+export interface CareerInputField {
+  label: string;
+  inputType: "text" | "date" | "email" | "tel" | "number" | "select" | "boolean";
+  description?: string;
+  formatHint?: string;
+  options: string[];
+  key: string;
+}
+
 export type CareerInteraction =
-  | { kind: "user_input"; requestId: string; label: string; inputType: "text" | "date" | "email" | "tel" | "number" | "select" | "boolean"; description?: string; formatHint?: string; options: string[]; key: string }
+  | ({ kind: "user_input"; requestId: string } & CareerInputField)
+  | { kind: "user_inputs"; requestId: string; fields: CareerInputField[] }
   | { kind: "answer_approval"; requestId: string; label: string; draft: string; key: string }
   | { kind: "submission"; requestId: string; prompt: string; completedFields: number; screenshotPath: string };
 
@@ -46,7 +56,7 @@ export interface CareerSessionStatus {
 export interface CareerSession {
   readonly threadId: string;
   sendMessage(message: string): AsyncIterable<CareerEvent>;
-  respond(input: string): AsyncIterable<CareerEvent>;
+  respond(input: string | string[]): AsyncIterable<CareerEvent>;
   status(): CareerSessionStatus;
   interrupt(): void;
   close(): Promise<void>;
@@ -117,7 +127,7 @@ function urlsIn(message: string): Set<string> {
 
 function isInteraction(value: unknown): value is CareerInteraction {
   if (!value || typeof value !== "object" || !("kind" in value) || !("requestId" in value)) return false;
-  return value.kind === "user_input" || value.kind === "answer_approval" || value.kind === "submission";
+  return value.kind === "user_input" || value.kind === "user_inputs" || value.kind === "answer_approval" || value.kind === "submission";
 }
 
 export async function createCareerSession(deps: CareerSessionDependencies = productionDependencies, options: { resume?: boolean } = {}): Promise<CareerSession> {
@@ -219,17 +229,22 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
     return runTurn((abort) => agent.stream(message, streamOptions(runId, abort)), runId, "thinking");
   };
 
-  const respond = (input: string): AsyncIterable<CareerEvent> => {
+  const respond = (input: string | string[]): AsyncIterable<CareerEvent> => {
     const suspended = pending;
     if (!suspended) return (async function* () { yield { type: "error", error: "The agent is not waiting for input" } as CareerEvent; })();
+    const expectsBatch = suspended.interaction.kind === "user_inputs";
+    if (expectsBatch !== Array.isArray(input)) {
+      return (async function* () { yield { type: "error", error: expectsBatch ? "All requested private values are required" : "This interaction accepts one response" } as CareerEvent; })();
+    }
     pending = undefined;
-    const normalized = input.trim().toLowerCase();
-    let resumeData: { value: string } | { approved: boolean; value?: string } | { approved: boolean };
-    if (suspended.interaction.kind === "user_input") resumeData = { value: input };
+    const normalized = typeof input === "string" ? input.trim().toLowerCase() : "";
+    let resumeData: { value: string } | { values: string[] } | { approved: boolean; value?: string } | { approved: boolean };
+    if (suspended.interaction.kind === "user_input") resumeData = { value: input as string };
+    else if (suspended.interaction.kind === "user_inputs") resumeData = { values: input as string[] };
     else if (suspended.interaction.kind === "answer_approval") {
       if (normalized === "no") resumeData = { approved: false };
       else if (normalized === "yes") resumeData = { approved: true };
-      else resumeData = { approved: true, value: input };
+      else resumeData = { approved: true, value: input as string };
     } else resumeData = { approved: normalized === "yes" };
     return runTurn((abort) => agent.resumeStream(resumeData, { ...streamOptions(suspended.runId, abort), toolCallId: suspended.toolCallId }), suspended.runId, "resuming");
   };

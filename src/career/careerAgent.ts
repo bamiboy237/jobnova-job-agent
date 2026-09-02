@@ -54,7 +54,7 @@ Job protocol:
 3. When the browser reaches an application form, call enter_application_mode. Generic navigation and browser mutations are then blocked.
 4. In application mode, use inspect_current_page and application_capabilities before mapping fields. Retrieve approved facts with one candidate_get call listing every key the page needs; use lookup_candidate_fact only for a single late semantic comparison.
 4a. Batch by default. After one snapshot, map every field you can already satisfy on the visible page and complete them in ONE execute_application_actions call, including checkbox and radio clicks. Use the individual protected tools only to recover from a failed action or to handle a control that appeared afterwards. Set stopOnError=false when the fields are independent so one stale ref does not discard the rest, then reinspect once and retry only the failed refs. Reinspect after every dynamic barrier, upload, stale ref, or step advance.
-5. If an exact private fact is unavailable or uncertain, call request_user_input for the specific fresh control. The client collects the value privately. You receive only an opaque answer handle; use fill_interactive_answer with that handle and a fresh ref.
+5. If exact private facts are unavailable or uncertain for multiple visible controls, call request_user_inputs once with every unresolved control. The client collects all values privately in one suspension. Use request_user_input only for one late or dynamically revealed control. You receive only opaque answer handles; batch all fill_interactive_answer actions in one execute_application_actions call with fresh refs.
 6. Use saved_context_capabilities and prepare_saved_context_answer to reuse previously supplied private facts without seeing their values.
 7. For model-generated free-form prose, call request_answer_approval with the draft and its specific control. Never enter generated prose before approval. Use the returned opaque handle after approval.
 8. Never click final submit. After all required fields are complete, call request_submission. It performs guarded validation, asks the user for confirmation, makes at most one final click, and verifies the result.
@@ -217,6 +217,41 @@ export function createCareerRuntime(modelConfig: ResolverModelConfig, catalog: C
         if (!inspected.control) return { success: false, error: inspected.error };
         if (!secureInputMetadata(inspected.control, saved.inputType)) return { success: false, error: "Saved context type is incompatible with this control" };
         return { success: true, answerId: bindAnswer(state, inspected.control, saved.value), key };
+      },
+    }),
+    request_user_inputs: createTool({
+      id: "request_user_inputs",
+      description: "Suspend once for multiple typed private values bound to current application controls. Values are never returned to the model.",
+      inputSchema: z.object({ requests: z.array(z.object({ ref: z.string(), key: semanticKeySchema, inputType: inputTypeSchema, description: z.string().max(500).optional(), formatHint: z.string().max(80).optional() })).min(2).max(20) }),
+      suspendSchema: z.object({ kind: z.literal("user_inputs"), requestId: z.string(), fields: z.array(z.object({ label: z.string(), inputType: inputTypeSchema, description: z.string().optional(), formatHint: z.string().optional(), options: z.array(z.string()), key: z.string() })) }),
+      resumeSchema: z.object({ values: z.array(z.string()) }),
+      execute: async ({ requests }, { agent }) => {
+        const fields: Array<{ label: string; inputType: SavedContextField["inputType"]; description?: string; formatHint?: string; options: string[]; key: string }> = [];
+        const controls: PageControl[] = [];
+        for (const request of requests) {
+          const inspected = await requireApplicationControl(request.ref, agent);
+          if (!inspected.control) return { success: false, ref: request.ref, key: request.key, error: inspected.error };
+          const metadata = secureInputMetadata(inspected.control, request.inputType);
+          if (!metadata) return { success: false, ref: request.ref, key: request.key, error: "Requested input type is incompatible with this control" };
+          fields.push({ ...metadata, description: request.description, formatHint: request.formatHint, key: request.key });
+          controls.push(inspected.control);
+        }
+        if (!agent?.resumeData) {
+          await agent?.suspend({ kind: "user_inputs", requestId: agent.toolCallId, fields });
+          return;
+        }
+        const values = agent.resumeData.values;
+        if (!Array.isArray(values) || values.length !== requests.length || values.some((value) => typeof value !== "string")) {
+          return { success: false, error: "Private input response did not match the requested fields" };
+        }
+        const answers = requests.map((request, index) => {
+          const metadata = fields[index]!;
+          const control = controls[index]!;
+          const value = values[index]!;
+          state.context.set(request.key, { key: request.key, label: metadata.label, inputType: metadata.inputType, value });
+          return { answerId: bindAnswer(state, control, value), key: request.key };
+        });
+        return { success: true, answers };
       },
     }),
     request_user_input: createTool({

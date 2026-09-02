@@ -90,6 +90,27 @@ describe("conversational career session", () => {
     await session.close();
   });
 
+  it("collects multiple private fields in one suspension and resumes once without exposing values", async () => {
+    const fixture = setup();
+    fixture.setChunks([{ type: "tool-call-suspended", payload: {
+      toolCallId: "inputs-1", toolName: "request_user_inputs", args: {}, resumeSchema: "{}",
+      suspendPayload: { kind: "user_inputs", requestId: "inputs-1", fields: [
+        { label: "Graduation date", inputType: "date", options: [], key: "education.graduation_date" },
+        { label: "Sponsorship required", inputType: "boolean", options: ["Yes", "No"], key: "work.sponsorship" },
+      ] },
+    } }]);
+    const session = await createCareerSession(fixture.deps);
+    const suspended = await collect(session.sendMessage("Continue the application"));
+    const invalid = await collect(session.respond("2027-05-30"));
+    expect(invalid).toContainEqual({ type: "error", error: "All requested private values are required" });
+    expect(session.status().waitingForInput).toBe(true);
+    const resumed = await collect(session.respond(["2027-05-30", "No"]));
+    expect(fixture.resumes).toEqual([{ values: ["2027-05-30", "No"] }]);
+    expect(fixture.messages).toEqual(["Continue the application"]);
+    expect(JSON.stringify([...suspended, ...invalid, ...resumed])).not.toContain("2027-05-30");
+    await session.close();
+  });
+
   it("allows resolver navigation only in resolution mode", () => {
     expect(canUseBrowserMutation("conversation", "browser_goto")).toBe(false);
     expect(canUseBrowserMutation("resolving", "browser_goto")).toBe(true);

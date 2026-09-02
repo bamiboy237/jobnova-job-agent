@@ -6,9 +6,9 @@ async function* emit(events: CareerEvent[]): AsyncGenerator<CareerEvent> {
   for (const event of events) yield event;
 }
 
-function setup(options: { send?: (message: string) => CareerEvent[]; respond?: (input: string) => CareerEvent[] } = {}) {
+function setup(options: { send?: (message: string) => CareerEvent[]; respond?: (input: string | string[]) => CareerEvent[] } = {}) {
   let creates = 0; let closes = 0; let interrupts = 0;
-  const messages: string[] = []; const responses: string[] = [];
+  const messages: string[] = []; const responses: Array<string | string[]> = [];
   const session: CareerSession = {
     threadId: "career-thread",
     sendMessage: (message) => { messages.push(message); return emit(options.send?.(message) ?? [{ type: "text_delta", delta: `Reply: ${message}` }]); },
@@ -57,6 +57,22 @@ describe("career-agent terminal interaction layer", () => {
     await fixture.client.handleInput("2027-05-30");
     expect(fixture.responses).toEqual(["2027-05-30"]);
     expect(fixture.output()).toContain("Graduation date (date)");
+    expect(fixture.output()).not.toContain("2027-05-30");
+    await fixture.client.close();
+  });
+
+  it("collects a private input batch locally and resumes the model only once", async () => {
+    const fixture = setup({ send: () => [{ type: "interaction", interaction: { kind: "user_inputs", requestId: "tool-1", fields: [
+      { label: "Graduation date", inputType: "date", options: [], key: "education.graduation_date" },
+      { label: "Sponsorship required", inputType: "boolean", options: ["Yes", "No"], key: "work.sponsorship" },
+    ] } }] });
+    await fixture.client.handleInput("Continue my application");
+    await fixture.client.handleInput("2027-05-30");
+    expect(fixture.responses).toEqual([]);
+    expect(fixture.output()).toContain("[1/2]: Graduation date");
+    expect(fixture.output()).toContain("[2/2]: Sponsorship required");
+    await fixture.client.handleInput("No");
+    expect(fixture.responses).toEqual([["2027-05-30", "No"]]);
     expect(fixture.output()).not.toContain("2027-05-30");
     await fixture.client.close();
   });

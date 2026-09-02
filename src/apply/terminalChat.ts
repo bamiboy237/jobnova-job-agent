@@ -31,6 +31,7 @@ export class TerminalChat {
   private rl?: readline.Interface;
   private session?: CareerSession;
   private interaction?: CareerInteraction;
+  private privateInputValues: string[] = [];
   private busy = false;
   private closed = false;
   private textOpen = false;
@@ -69,8 +70,20 @@ export class TerminalChat {
     const message = rawInput.trim();
     if (!message && !this.interaction) return;
     const session = await this.ensureSession();
-    if (this.interaction) { this.interaction = undefined; await this.consume(session.respond(rawInput)); }
-    else await this.consume(session.sendMessage(message));
+    if (this.interaction?.kind === "user_inputs") {
+      this.privateInputValues.push(rawInput);
+      if (this.privateInputValues.length < this.interaction.fields.length) {
+        this.renderInputField(this.interaction.fields[this.privateInputValues.length]!, this.privateInputValues.length, this.interaction.fields.length);
+        return;
+      }
+      const values = this.privateInputValues;
+      this.privateInputValues = [];
+      this.interaction = undefined;
+      await this.consume(session.respond(values));
+    } else if (this.interaction) {
+      this.interaction = undefined;
+      await this.consume(session.respond(rawInput));
+    } else await this.consume(session.sendMessage(message));
   }
 
   private async ensureSession(): Promise<CareerSession> {
@@ -106,6 +119,7 @@ export class TerminalChat {
     } else if (event.type === "interaction") {
       this.endText();
       this.interaction = event.interaction;
+      this.privateInputValues = [];
       this.renderInteraction(event.interaction);
     } else if (event.type === "interrupted") {
       this.endText();
@@ -118,11 +132,10 @@ export class TerminalChat {
 
   private renderInteraction(interaction: CareerInteraction): void {
     if (interaction.kind === "user_input") {
-      this.write(`Input required: ${interaction.label} (${interaction.inputType})\n`);
-      if (interaction.description) this.write(`${interaction.description}\n`);
-      if (interaction.formatHint) this.write(`Format: ${interaction.formatHint}\n`);
-      if (interaction.options.length) this.write(`Options: ${interaction.options.join(" | ")}\n`);
-      this.write("Enter the value. It will be bound to the form without being returned to the model.\n");
+      this.renderInputField(interaction);
+    } else if (interaction.kind === "user_inputs") {
+      this.write(`Input required for ${interaction.fields.length} application fields. Values stay outside the model.\n`);
+      this.renderInputField(interaction.fields[0]!, 0, interaction.fields.length);
     } else if (interaction.kind === "answer_approval") {
       this.write(`${interaction.label}\n\n${interaction.draft}\n\n`);
       this.write('Type "yes" to approve, "no" to decline, or enter replacement text.\n');
@@ -130,6 +143,15 @@ export class TerminalChat {
       this.write(`${interaction.prompt}\nCompleted fields: ${interaction.completedFields}\nScreenshot: ${interaction.screenshotPath}\n`);
       this.write('Type "yes" to authorize one submission attempt. Any other response declines.\n');
     }
+  }
+
+  private renderInputField(field: Extract<CareerInteraction, { kind: "user_input" }> | Extract<CareerInteraction, { kind: "user_inputs" }>["fields"][number], index?: number, total?: number): void {
+    const progress = index !== undefined && total !== undefined ? ` [${index + 1}/${total}]` : "";
+    this.write(`Input required${progress}: ${field.label} (${field.inputType})\n`);
+    if (field.description) this.write(`${field.description}\n`);
+    if (field.formatHint) this.write(`Format: ${field.formatHint}\n`);
+    if (field.options.length) this.write(`Options: ${field.options.join(" | ")}\n`);
+    this.write("Enter the value. It will be bound to the form without being returned to the model.\n");
   }
 
   private showHelp(): void {
@@ -160,6 +182,7 @@ export class TerminalChat {
     const session = this.session;
     this.session = undefined;
     this.interaction = undefined;
+    this.privateInputValues = [];
     session?.interrupt();
     await session?.close().catch(() => {});
     this.rl?.close();
