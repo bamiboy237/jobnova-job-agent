@@ -35,13 +35,13 @@ export function getResolverModelConfig(): ResolverModelConfig {
   if (provider === "gemini") {
     const apiKey = requireApiKey("GEMINI_API_KEY");
     return {
-      agentModel: { id: "google/gemini-3.7-flash", apiKey },
+      agentModel: { id: "google/gemini-3.6-flash", apiKey },
       browserModel: {
-        modelName: "google/gemini-3.7-flash",
+        modelName: "google/gemini-3.6-flash",
         apiKey,
       },
       agentProviderOptions: { google: { thinkingConfig: { thinkingLevel: "medium" } } },
-      label: "Gemini 3.7 Flash (dynamic thinking)",
+      label: "Gemini 3.6 Flash (medium dynamic thinking)",
       secrets: [apiKey],
     };
   }

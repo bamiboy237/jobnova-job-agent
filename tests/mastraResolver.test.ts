@@ -99,12 +99,12 @@ describe("Mastra model selection", () => {
     expect(config.agentProviderOptions).toEqual({ openai: { reasoningEffort: "medium" } });
   });
 
-  it("uses Gemini 3.7 Flash by default and supports explicit DeepSeek selection", () => {
+  it("uses Gemini 3.6 Flash with medium dynamic thinking by default and supports explicit DeepSeek selection", () => {
     delete process.env.LLM_PROVIDER;
     process.env.GEMINI_API_KEY = "gemini-key";
     expect(getResolverModelConfig()).toMatchObject({
-      agentModel: { id: "google/gemini-3.7-flash" },
-      browserModel: { modelName: "google/gemini-3.7-flash" },
+      agentModel: { id: "google/gemini-3.6-flash" },
+      browserModel: { modelName: "google/gemini-3.6-flash" },
       agentProviderOptions: { google: { thinkingConfig: { thinkingLevel: "medium" } } },
     });
 

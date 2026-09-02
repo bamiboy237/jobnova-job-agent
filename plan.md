@@ -89,8 +89,8 @@ Job-fit scoring is optional and should only be added after the required resolver
 
 - TypeScript
 - Mastra
-- OpenAI `gpt-5.6-luna` with medium reasoning
-- Gemini 3.6 Flash with dynamic thinking as an explicit fallback
+- Gemini 3.6 Flash with medium dynamic thinking
+- OpenAI `gpt-5.6-luna` with medium reasoning as an explicit fallback
 - DeepSeek V4 Flash Vision as an experimental fallback
 - Browserbase remote Chromium
 - Stagehand

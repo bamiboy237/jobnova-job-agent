@@ -27,7 +27,7 @@ function setup() {
     abortRunStream: (runId: string) => { abortedRuns.push(runId); return true; },
   };
   const deps = {
-    getConfig: () => ({ agentModel: { id: "google/gemini-3.7-flash", apiKey: "key" }, browserModel: { modelName: "google/gemini-3.7-flash", apiKey: "key" }, label: "fake", secrets: ["key"] }),
+    getConfig: () => ({ agentModel: { id: "google/gemini-3.6-flash", apiKey: "key" }, browserModel: { modelName: "google/gemini-3.6-flash", apiKey: "key" }, label: "fake", secrets: ["key"] }),
     loadProfile: async () => ({ ok: true, profile: {} }),
     toCatalog: () => ({ facts: {}, reusableAnswers: {} }),
     createRuntime: (_config: unknown, _catalog: unknown, state: typeof capturedState) => { runtimeCreates += 1; capturedState = state; return { mastra: { getAgentById: () => agent }, browsers: { close: async () => { closes += 1; } } }; },
