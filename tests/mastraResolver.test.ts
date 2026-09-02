@@ -16,37 +16,53 @@ afterEach(() => {
 
 describe("Mastra resolver architecture", () => {
   it("removes obsolete snapshot payloads while preserving the latest refs and other messages", () => {
-    const snapshot = (value: string) => ({
-      role: "tool",
-      content: [{
-        type: "tool-result",
-        toolCallId: `snapshot-${value}`,
-        toolName: "browser_snapshot",
-        output: { success: true, snapshot: value },
+    // Real Mastra `prepareStep` shape: tool calls live in a top-level `parts` array
+    // as "tool-invocation" parts, and `content` holds assistant text.
+    const toolMessage = (toolName: string, id: string, result: unknown) => ({
+      role: "assistant",
+      content: "",
+      parts: [{
+        type: "tool-invocation",
+        toolInvocation: { state: "result", toolCallId: id, toolName, args: {}, result },
       }],
     });
-    const user = {
-      role: "user",
-      content: "candidate profile",
-    };
+    const snapshot = (value: string) => toolMessage("browser_snapshot", `snapshot-${value}`, { success: true, snapshot: value });
+    const inspection = (value: string) => toolMessage("inspect_current_page", `inspection-${value}`, { controls: [value] });
+    const user = { role: "user", content: "candidate profile" };
     const currentSnapshot = snapshot("current refs");
-    const inspection = (value: string) => ({
-      role: "tool",
-      content: [{
-        type: "tool-result",
-        toolCallId: `inspection-${value}`,
-        toolName: "inspect_current_page",
-        output: { controls: [value] },
-      }],
-    });
     const currentInspection = inspection("current controls");
+
     const compacted = compactSupersededSnapshots([snapshot("old refs"), inspection("old controls"), user, currentSnapshot, currentInspection]);
 
-    expect(compacted[0].content[0]).toMatchObject({ output: { superseded: true } });
-    expect(compacted[1].content[0]).toMatchObject({ output: { superseded: true } });
+    expect(compacted[0].parts![0]).toMatchObject({ toolInvocation: { result: { superseded: true } } });
+    expect(compacted[1].parts![0]).toMatchObject({ toolInvocation: { result: { superseded: true } } });
     expect(compacted[2]).toEqual(user);
     expect(compacted[3]).toEqual(currentSnapshot);
     expect(compacted[4]).toEqual(currentInspection);
+  });
+
+  it("keeps only the latest payload when one message carries several snapshots", () => {
+    const part = (toolName: string, id: string, payload: string) => ({
+      type: "tool-invocation",
+      toolInvocation: { state: "result", toolCallId: id, toolName, args: {}, result: { payload } },
+    });
+    const message = {
+      role: "assistant",
+      content: "",
+      parts: [
+        part("browser_snapshot", "a", "first"),
+        part("browser_scroll", "b", "unrelated tool is untouched"),
+        part("browser_snapshot", "c", "second"),
+        part("browser_snapshot", "d", "latest"),
+      ],
+    };
+
+    const [compacted] = compactSupersededSnapshots([message]);
+
+    expect(compacted.parts![0]).toMatchObject({ toolInvocation: { result: { superseded: true } } });
+    expect(compacted.parts![1]).toEqual(message.parts[1]);
+    expect(compacted.parts![2]).toMatchObject({ toolInvocation: { result: { superseded: true } } });
+    expect(compacted.parts![3]).toEqual(message.parts[3]);
   });
 
   it("requires the final semantic candidate to match a browser-observed URL", () => {

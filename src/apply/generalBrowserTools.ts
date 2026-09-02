@@ -172,7 +172,7 @@ export function createGeneralApplicationTools(browser: AgentBrowser, catalog: Ca
     ...tools,
     execute_application_actions: createTool({
       id: "execute_application_actions",
-      description: "Execute up to 20 stable, independent fact-backed form actions in order. Stops at the first failed action. Results never contain candidate values.",
+      description: "Preferred way to complete a page: execute up to 20 form actions (fact fills, selects, interactive answers, resume upload, checkbox/radio clicks) in one call. Batch every field you can already map instead of calling the individual tools one at a time. Set stopOnError=false for independent fields. Results never contain candidate values.",
       inputSchema: z.object({ actions: z.array(z.discriminatedUnion("action", [
         z.object({ action: z.literal("fill_fact"), ref: z.string(), factKey: z.string() }),
         z.object({ action: z.literal("select_fact"), ref: z.string(), factKey: z.string(), optionLabel: z.string().optional() }),
@@ -180,9 +180,10 @@ export function createGeneralApplicationTools(browser: AgentBrowser, catalog: Ca
         z.object({ action: z.literal("fill_reusable_answer"), ref: z.string(), answerKey: z.string() }),
         z.object({ action: z.literal("fill_interactive_answer"), ref: z.string(), answerId: z.string() }),
         z.object({ action: z.literal("upload_approved_resume"), ref: z.string().optional(), resumeId: z.string() }),
-      ])).max(20) }),
-      execute: async ({ actions }, { agent }) => {
-        const outcomes: Array<{ action: string; success: boolean; factKey?: string; answerKey?: string; answerId?: string; resumeId?: string; error?: string }> = [];
+        z.object({ action: z.literal("click_reversible"), ref: z.string() }),
+      ])).max(20), stopOnError: z.boolean().default(true).describe("Stop at the first failure. Set false for independent fields so one bad ref does not discard the rest.") }),
+      execute: async ({ actions, stopOnError }, { agent }) => {
+        const outcomes: Array<{ action: string; ref?: string; success: boolean; factKey?: string; answerKey?: string; answerId?: string; resumeId?: string; error?: string }> = [];
         for (const action of actions) {
           let result: SafeOutcome & { answerId?: string };
           if (action.action === "fill_fact") result = await tools.fill_fact.execute!(action, { agent } as never) as SafeOutcome;
@@ -190,10 +191,11 @@ export function createGeneralApplicationTools(browser: AgentBrowser, catalog: Ca
           else if (action.action === "choose_fact_option") result = await tools.choose_fact_option.execute!(action, { agent } as never) as SafeOutcome;
           else if (action.action === "fill_reusable_answer") result = await tools.fill_reusable_answer.execute!(action, { agent } as never) as SafeOutcome;
           else if (action.action === "fill_interactive_answer") result = await tools.fill_interactive_answer.execute!(action, { agent } as never) as SafeOutcome & { answerId?: string };
+          else if (action.action === "click_reversible") result = await tools.click_reversible.execute!(action, { agent } as never) as SafeOutcome;
           else result = await tools.upload_approved_resume.execute!(action, { agent } as never) as SafeOutcome;
           const { success, factKey, answerKey, resumeId, error } = result;
-          outcomes.push({ action: action.action, success, ...(factKey ? { factKey } : {}), ...(answerKey ? { answerKey } : {}), ...(action.action === "fill_interactive_answer" ? { answerId: action.answerId } : {}), ...(resumeId ? { resumeId } : {}), ...(error ? { error } : {}) });
-          if (!success) break;
+          outcomes.push({ action: action.action, ...(action.ref ? { ref: action.ref } : {}), success, ...(factKey ? { factKey } : {}), ...(answerKey ? { answerKey } : {}), ...(action.action === "fill_interactive_answer" ? { answerId: action.answerId } : {}), ...(resumeId ? { resumeId } : {}), ...(error ? { error } : {}) });
+          if (!success && stopOnError) break;
         }
         return { success: outcomes.every((outcome) => outcome.success), outcomes };
       },

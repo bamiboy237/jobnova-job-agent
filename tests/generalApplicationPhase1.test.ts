@@ -168,8 +168,8 @@ describe("general protected tool boundaries", () => {
     ] }, {} as never);
     expect(filled).toEqual(["@first:Taylor Sample", "@second:Python"]);
     expect(result).toEqual({ success: true, outcomes: [
-      { action: "fill_fact", success: true, factKey: "personal.name.full" },
-      { action: "fill_fact", success: true, factKey: "skills.primary" },
+      { action: "fill_fact", ref: "@first", success: true, factKey: "personal.name.full" },
+      { action: "fill_fact", ref: "@second", success: true, factKey: "skills.primary" },
     ] });
     expect(JSON.stringify(result)).not.toContain("Taylor Sample");
     expect(JSON.stringify(result)).not.toContain("Python");
@@ -190,6 +190,25 @@ describe("general protected tool boundaries", () => {
       { success: false },
     ] });
     expect(result.outcomes).toHaveLength(2);
+  });
+
+  it("continues an independent batch past a failed action when stopOnError is false", async () => {
+    const filled: string[] = [];
+    const browser = { getManagerForThread: async () => ({ getPage: () => ({ url: () => "http://localhost/fixture" }), getLocatorFromRef: (ref: string) => ({ evaluate: async () => ref === "@bad" ? control({ enabled: false }) : control(), fill: async () => { filled.push(ref); } }) }) };
+    const tools = createGeneralApplicationTools(browser as never, { facts: { "personal.name.full": "Taylor Sample", "skills.primary": "Python" }, reusableAnswers: {} });
+    const result = await tools.execute_application_actions.execute({ stopOnError: false, actions: [
+      { action: "fill_fact", ref: "@good", factKey: "personal.name.full" },
+      { action: "fill_fact", ref: "@bad", factKey: "skills.primary" },
+      { action: "fill_fact", ref: "@later", factKey: "personal.name.full" },
+    ] }, {} as never);
+    expect(filled).toEqual(["@good", "@later"]);
+    expect(result.outcomes).toHaveLength(3);
+    expect(result).toMatchObject({ success: false, outcomes: [
+      { ref: "@good", success: true },
+      { ref: "@bad", success: false },
+      { ref: "@later", success: true },
+    ] });
+    expect(JSON.stringify(result)).not.toContain("Taylor Sample");
   });
 });
 
