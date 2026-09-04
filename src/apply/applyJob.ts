@@ -75,6 +75,20 @@ export function createApplicationRun(input: ApplyJobInput, deps: ApplyJobDepende
     paused = true; ready = false;
     return { status: "needs_takeover", reason, instructions: reason === "authentication" ? "Complete the visible sign-in or verification step in the open browser, then resume." : "Complete the visible human-verification step in the open browser, then resume." };
   };
+  const CAPTCHA_SOLVE_BUDGET_MS = 45_000;
+  const CAPTCHA_SOLVE_POLL_MS = 15_000;
+  const waitForCaptchaSolve = async (current: PageState): Promise<PageState> => {
+    if (process.env.BROWSER_PROVIDER === "local") return current;
+    trace.push("Challenge visible; giving Browserbase up to 45 seconds to solve it");
+    const deadline = deps.now() + CAPTCHA_SOLVE_BUDGET_MS;
+    let latest = current;
+    while (deps.now() < deadline) {
+      await deps.wait(Math.min(CAPTCHA_SOLVE_POLL_MS, deadline - deps.now()));
+      try { latest = await deps.inspect(runtime!.browsers.actionBrowser, [], runId); } catch { break; }
+      if (latest.intent !== "challenge") { trace.push("Challenge cleared; continuing"); return latest; }
+    }
+    return latest;
+  };
   const initialize = async (): Promise<ApplicationResult | undefined> => {
     if (initialized) return; initialized = true;
     if (!isAllowedApplicationUrl(input.applicationUrl)) return blocked("applicationUrl must use HTTPS or loopback HTTP");
@@ -101,7 +115,8 @@ export function createApplicationRun(input: ApplyJobInput, deps: ApplyJobDepende
     }
   };
   const inspectAndAudit = async (inspected?: PageState): Promise<ApplicationRunOutcome> => {
-    const current = inspected ?? await deps.inspect(runtime!.browsers.actionBrowser, [], runId);
+    const seen = inspected ?? await deps.inspect(runtime!.browsers.actionBrowser, [], runId);
+    const current = seen.intent === "challenge" ? await waitForCaptchaSolve(seen) : seen;
     if (current.intent === "challenge") return takeover("human_verification");
     if (current.intent === "authentication") return takeover("authentication");
     const gaps = requiredGaps(current.controls);
@@ -138,7 +153,8 @@ export function createApplicationRun(input: ApplyJobInput, deps: ApplyJobDepende
       } else if (turn.kind === "message") {
         prompt = turn.message;
       } else {
-        const state = await deps.inspect(runtime!.browsers.actionBrowser, [], runId);
+        const seen = await deps.inspect(runtime!.browsers.actionBrowser, [], runId);
+        const state = seen.intent === "challenge" ? await waitForCaptchaSolve(seen) : seen;
         if (state.intent === "challenge") { yield { type: "outcome", outcome: takeover("human_verification") }; return; }
         if (state.intent === "authentication" && !canAttemptInitialAuthentication(input.credentials)) { yield { type: "outcome", outcome: takeover("authentication") }; return; }
         if (turn.kind === "takeover" && paused && !requiredGaps(state.controls).length) { yield { type: "outcome", outcome: await inspectAndAudit(state) }; return; }

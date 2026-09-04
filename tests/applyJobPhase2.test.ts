@@ -121,17 +121,59 @@ describe("applyJob controller seam", () => {
   });
 
   it("keeps the same browser open for manual takeover and resumes without another agent turn", async () => {
-    const application = state([]);
-    const challenge = { ...state([]), intent: "challenge" as const };
-    const ready = finalState();
-    const f = fake([application, challenge, ready]);
-    const run = createApplicationRun(input(), f.deps);
-    expect(await run.continue()).toMatchObject({ status: "needs_takeover", reason: "human_verification" });
-    expect(f.counts()).toMatchObject({ generates: 1, closeCalls: 0 });
-    expect(await run.continue()).toMatchObject({ status: "ready_to_submit" });
-    expect(f.counts()).toMatchObject({ generates: 1, closeCalls: 0 });
-    await run.close();
-    expect(f.counts().closeCalls).toBe(1);
+    const savedProvider = process.env.BROWSER_PROVIDER;
+    process.env.BROWSER_PROVIDER = "local";
+    try {
+      const application = state([]);
+      const challenge = { ...state([]), intent: "challenge" as const };
+      const ready = finalState();
+      const f = fake([application, challenge, ready]);
+      const run = createApplicationRun(input(), f.deps);
+      expect(await run.continue()).toMatchObject({ status: "needs_takeover", reason: "human_verification" });
+      expect(f.counts()).toMatchObject({ generates: 1, closeCalls: 0 });
+      expect(await run.continue()).toMatchObject({ status: "ready_to_submit" });
+      expect(f.counts()).toMatchObject({ generates: 1, closeCalls: 0 });
+      await run.close();
+      expect(f.counts().closeCalls).toBe(1);
+    } finally {
+      if (savedProvider === undefined) delete process.env.BROWSER_PROVIDER;
+      else process.env.BROWSER_PROVIDER = savedProvider;
+    }
+  });
+
+  it("waits for Browserbase solving and continues when the challenge clears", async () => {
+    const savedProvider = process.env.BROWSER_PROVIDER;
+    process.env.BROWSER_PROVIDER = "browserbase";
+    try {
+      const application = state([]);
+      const challenge = { ...state([]), intent: "challenge" as const };
+      const ready = finalState();
+      const f = fake([application, challenge, ready]);
+      const run = createApplicationRun(input(), f.deps);
+      expect(await run.continue()).toMatchObject({ status: "ready_to_submit" });
+      expect(f.counts()).toMatchObject({ generates: 1, closeCalls: 0 });
+      await run.close();
+    } finally {
+      if (savedProvider === undefined) delete process.env.BROWSER_PROVIDER;
+      else process.env.BROWSER_PROVIDER = savedProvider;
+    }
+  });
+
+  it("hands over after the solve budget when the challenge persists", async () => {
+    const savedProvider = process.env.BROWSER_PROVIDER;
+    process.env.BROWSER_PROVIDER = "browserbase";
+    try {
+      const application = state([]);
+      const challenge = { ...state([]), intent: "challenge" as const };
+      const f = fake([application, challenge, challenge, challenge, challenge]);
+      const run = createApplicationRun(input(), f.deps);
+      expect(await run.continue()).toMatchObject({ status: "needs_takeover", reason: "human_verification" });
+      expect(f.counts()).toMatchObject({ generates: 1, closeCalls: 0 });
+      await run.close();
+    } finally {
+      if (savedProvider === undefined) delete process.env.BROWSER_PROVIDER;
+      else process.env.BROWSER_PROVIDER = savedProvider;
+    }
   });
 
   it("streams ordinary messages and sanitized tool events on one runtime and thread", async () => {
