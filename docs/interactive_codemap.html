@@ -587,7 +587,7 @@
           <div class="component-card" onclick="selectComponent('apply', this)">
             <div class="component-header">
               <span class="component-title">src/apply/</span>
-              <span class="component-files-count">19 files</span>
+              <span class="component-files-count">20 files</span>
             </div>
             <div class="component-desc">
               Form filling. Reads controls, fills from the candidate profile, audits, and asks before it submits.
@@ -664,7 +664,7 @@ src/
 ├── auth.ts                    # npm run auth
 ├── types.ts                   # ResolverResult, ApplicationResult
 ├── resolver/                  # LinkedIn URL → application URL (3 files)
-├── apply/                     # form engine (19 files)
+├── apply/                     # form engine (20 files)
 ├── career/                    # chat agent, sessions (2 files)
 ├── mastra/                    # models, storage, retries (6 files)
 └── browser/                   # Browserbase + local Chrome (2 files)
@@ -731,6 +731,11 @@ web/
         <h3 class="sub-heading">Talk through a role</h3>
         <p>
           <code>ChatWorkspace</code> sends messages through <code>JobnovaTransport</code> to <code>POST /api/chat/:id/message</code>. <code>CareerSession</code> runs the <code>createCareerRuntime()</code> agent, which opens your URL (<code>open_supplied_job</code>) and locks onto forms (<code>enter_application_mode</code>). <code>compactSupersededSnapshots()</code> trims old DOM dumps; <code>getMastraStorage()</code> keeps threads across restarts.
+        </p>
+
+        <h3 class="sub-heading">Attach your resume</h3>
+        <p>
+          The paperclip posts the PDF to <code>POST /api/files</code> (PDF only, 10MB max). The server saves it as the approved copy and parses contact lines into trusted fact keys — the model never sees the raw text. Each chat turn merges the facts under your profile, so fills and missing-value prompts need you less.
         </p>
 
         <h3 class="sub-heading">Fill a form</h3>
@@ -844,7 +849,7 @@ npm run serve
         ]
       },
       apply: {
-        title: "src/apply/ — form filling (19 files)",
+        title: "src/apply/ — form filling (20 files)",
         desc: "Reads controls, fills from the candidate profile, audits, and asks before it submits.",
         files: [
           "generalBrowserTools.ts: Guarded tools; batches up to 20 DOM writes per turn.",
@@ -858,6 +863,7 @@ npm run serve
           "applyJob.ts: Runs one fill: inspect, fill, audit, submit on approval.",
           "applyLever.ts: Runs the authorized Lever proof application.",
           "resume.ts: Finds the approved resume PDF for upload.",
+          "resumeFacts.ts: Parses uploaded PDFs into trusted fact keys.",
           "cli.ts: Form CLI — fill without submitting, or fill and submit once."
         ]
       },

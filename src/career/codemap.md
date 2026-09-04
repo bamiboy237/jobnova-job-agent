@@ -1,24 +1,20 @@
 # src/career/
 
 ## Responsibility
-Provides the unified conversational career agent that converses with the candidate, analyzes roles, resolves LinkedIn jobs, executes ATS applications, and pauses for private input and submission authorization.
+The chat agent: talks through roles, opens job URLs, fills forms, and pauses for missing values and submit approval.
 
 ## Design
-- **Single Runtime Model Loop**: Operates as one Mastra thread (`careerAgent.ts`) with access to both resolution tools and guarded application tools, avoiding fragmented multi-agent transitions.
-- **Normalized Event Streaming (`CareerEvent`)**: Generates asynchronous generator streams of typed events:
-  - `status`: thinking/resuming indicator
-  - `text_delta`: streamed assistant response chunks
-  - `tool`: lifecycle telemetry (`started`, `completed`, `failed`)
-  - `interaction`: suspension cards (`user_input`, `user_inputs`, `answer_approval`, `submission`)
-- **Batched Private Suspensions**: `request_user_inputs` tool allows the agent to request multiple missing form values in a single suspension payload.
-- **Session Lifecycle & Resource Management (`careerSession.ts`)**: Supports idle browser timeout, session closure, and cross-turn resumption.
+- **One thread**: `careerAgent.ts` runs a single Mastra loop with resolution and form tools, so no handoff between agents.
+- **Typed events (`CareerEvent`)**: `status`, `text_delta`, `tool` (`started`, `completed`, `failed`), and `interaction` cards (`user_inputs`, `answer_approval`, `submission`) stream over SSE.
+- **One ask for missing values**: `request_user_inputs` gathers up to 20 fields in a single pause.
+- **Sessions (`careerSession.ts`)**: `createCareerSession()` opens a thread with a browser slot; idle browsers release after 10 minutes; `resumeCareerSession()` picks the thread back up. Each turn re-merges uploaded resume facts under the profile.
 
 ## Flow
 1. User sends message or job URL via web interface or CLI.
 2. `CareerSession.sendMessage()` launches the Mastra agent loop.
-3. Model converses or selects tools (`resolve_linkedin_job`, `inspect_current_page`, `execute_application_actions`).
-4. If a field requires user guidance, model calls `request_user_input` or `request_user_inputs`, suspending the turn.
-5. Client responds via `CareerSession.respond(values)`; agent receives opaque tokens and continues execution.
+3. Model converses or picks tools (`open_supplied_job`, `enter_application_mode`, `inspect_current_page`, `execute_application_actions`).
+4. For missing values the model calls `request_user_inputs`, pausing the turn.
+5. The client answers through `CareerSession.respond(values)`; the turn resumes.
 6. When application is complete, agent triggers submission confirmation interaction.
 
 ## Integration

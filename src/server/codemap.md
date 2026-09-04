@@ -1,19 +1,17 @@
 # src/server/
 
 ## Responsibility
-Manages persistent state and storage for detached resolver runs and asynchronous job evaluation lifecycles.
+Remembers resolver runs across restarts: `queued` → `running` → `completed` or `failed`.
 
 ## Design
-- **Data Access Object (DAO) Pattern**: `RunStore` encapsulates LibSQL/SQLite database operations for the `jobnova_runs` table.
-- **State Machine**: Tracks run progression across four distinct statuses: `queued` → `running` → `completed` | `failed`.
-- **Durable Across Restarts**: Preserves resolver traces, duration metrics, and destination results on disk or persistent volume (`MASTRA_DATABASE_URL`).
+- **`RunStore`**: reads and writes the `jobnova_runs` SQLite table (`initialize`, `create`, `markRunning`, `complete`, `fail`, `get`).
+- **Lives on disk**: points at `MASTRA_DATABASE_URL`, so traces and results survive restarts.
 
 ## Flow
-1. Server starts and calls `store.initialize()`, creating `jobnova_runs` schema if not exists.
-2. `POST /api/runs` creates a `queued` record with UUID.
-3. Background worker marks the run `running` with `startedAt` timestamp.
-4. On resolver resolution, updates status to `completed` or `failed` with JSON serialized `ResolverResult`.
-5. `GET /api/runs/:id` retrieves stored run details and calculates elapsed runtime.
+1. The server calls `store.initialize()` at startup.
+2. `POST /api/runs` writes a `queued` record.
+3. A background task marks it `running`, then `completed` or `failed` with the serialized `ResolverResult`.
+4. `GET /api/runs/:id` reads the record back with elapsed runtime.
 
 ## Integration
 - **Consumed by**: `src/server.ts`.

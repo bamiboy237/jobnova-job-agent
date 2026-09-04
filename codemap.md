@@ -46,7 +46,7 @@ src/
 ├── auth.ts                    # npm run auth
 ├── types.ts                   # ResolverResult, ApplicationResult
 ├── resolver/                  # LinkedIn URL → application URL (3 files)
-├── apply/                     # form engine (19 files)
+├── apply/                     # form engine (20 files)
 ├── career/                    # chat agent, sessions (2 files)
 ├── mastra/                    # models, storage, retries (6 files)
 └── browser/                   # Browserbase + local Chrome (2 files)
@@ -76,6 +76,10 @@ web/
 ### Talk through a role
 
 `ChatWorkspace` sends messages through `JobnovaTransport` to `POST /api/chat/:id/message`. `CareerSession` runs the `createCareerRuntime()` agent, which opens your URL (`open_supplied_job`) and locks onto forms (`enter_application_mode`). `compactSupersededSnapshots()` trims old DOM dumps; `getMastraStorage()` keeps threads across restarts.
+
+### Attach your resume
+
+The paperclip posts the PDF to `POST /api/files` (PDF only, 10MB max). The server saves it as the approved copy and parses contact lines into trusted fact keys — the model never sees the raw text. Each chat turn merges the facts under your profile, so fills and missing-value prompts need you less.
 
 ### Fill a form
 

@@ -1,20 +1,19 @@
 # src/mastra/
 
 ## Responsibility
-Configures and orchestrates the Mastra agent framework, managing LLM provider selection, persistent memory storage, browser tool wrappers, rate-limit retry policies, and context window snapshot compaction.
+Agent runtime: model choice, thread memory, rate-limit retries, and history trimming.
 
 ## Design
-- **Mastra Agent Configuration**: Instantiates `Agent` with toolkits for browser interaction, structured JSON schemas, and thread memory.
-- **Provider Factory**: `model.ts` maps `LLM_PROVIDER` (`gemini`, `openai`, `deepseek`) to appropriate model identifiers (`google/gemini-3.6-flash`, `openai/gpt-5.6-luna`) and provider options (e.g. reasoning/thinking levels).
-- **Snapshot Compaction (Token Optimization)**: `compactSupersededSnapshots` rewrites past step history in `prepareStep` to stub out obsolete `browser_snapshot` and `inspect_current_page` payloads, preventing explosive token burn across multi-turn sessions.
-- **Resilience / Fault Tolerance**: `rateLimitRetry.ts` intercepts HTTP 429/rate-limit exceptions and performs exponential backoff.
-- **LibSQL Storage**: `storage.ts` provides LibSQL-backed thread persistence (`LibSqlStorage`).
+- **Provider choice**: `model.ts` reads `LLM_PROVIDER` (`gemini`, `openai`, `deepseek`) and returns the model ids (Gemini by default).
+- **History trimming**: `compactSupersededSnapshots` replaces old DOM dumps in `prepareStep` history with tombstones.
+- **429 retries**: `rateLimitRetry.ts` detects rate limits (`isRateLimitError`) and backs off (`rateLimitRetryDelayMs`).
+- **Thread memory**: `storage.ts` returns the LibSQL store (`getMastraStorage`) that keeps threads across restarts.
 
 ## Flow
 1. `createResolverRuntime(modelConfig)` initializes `LibSqlStorage` and browser wrappers (`AgentBrowser` and `Stagehand`).
 2. Tools are created with input/output validation via Zod schemas.
 3. During execution, `prepareStep` intercepts messages and runs `compactSupersededSnapshots` to trim historic page dumps.
-4. If the LLM hits provider rate limits, `withRateLimitRetry` retries with backoff.
+4. On rate limits, `isRateLimitError` triggers a backed-off retry.
 5. On completion, structured output is validated against `ResolverAgentOutputSchema`.
 
 ## Integration

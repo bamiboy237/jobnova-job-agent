@@ -1,16 +1,16 @@
 # src/apply/
 
 ## Responsibility
-Implements the autonomous ATS application pipeline, providing form understanding, guarded form filling, candidate profile resolution, batch action execution, resume upload, and human-in-the-loop submission authorization.
+Fills ATS application forms from the candidate profile, asks for what the profile lacks, and stops for human approval before submitting.
 
 ## Design
-- **Guarded Action Pattern**: Browser mutations are strictly decoupled from LLM reasoning. The model receives value-free semantic refs (`@ref1`, `@ref2`) and requests actions via keys (`personal.email`); guarded TypeScript code performs the actual DOM input without returning values to context (`generalBrowserTools.ts`, `generalSafety.ts`).
-- **Batch Action Execution (`execute_application_actions`)**: Groups up to 20 sequential DOM actions (`fill_fact`, `select_fact`, `upload_approved_resume`, etc.) into one model step with `stopOnError` support.
-- **Candidate Data Privacy & Isolation**:
-  - `candidateCatalog.ts` & `generalFacts.ts`: Resolves approved profile facts into typed values in memory.
-  - Opaque answer tokens: user inputs provided interactively are held in private state and bound to controls via opaque tokens.
-- **Run Ledger (`runLedger.ts`)**: Tracks completed fields and prevents redundant re-fills.
-- **One-Click Submission Invariant**: Submission requires full form validation, screenshot capture (`applicationArtifacts.ts`), explicit human approval, and exactly one click without retry.
+- **Values stay in TypeScript**: the model sees `@ref` handles and fact keys (`personal.email`); guarded code writes the real values without returning them (`generalBrowserTools.ts`).
+- **Batch writes (`execute_application_actions`)**: up to 20 DOM writes (`fill_fact`, `select_fact`, `upload_approved_resume`, and others) in one model turn, with `stopOnError=false` for independent fields.
+- **Private answers**: `candidateCatalog.ts` and `generalFacts.ts` hold approved facts in memory; interactive answers stay in private state and bind to controls without entering logs.
+- **Run ledger (`runLedger.ts`)**: records filled fields so none fills twice.
+- **Resume upload**: `POST /api/files` saves the PDF as the approved copy; `resumeFacts.ts` parses labeled contact lines into trusted fact keys only, and each chat turn merges them under the profile (profile wins).
+- **Challenge grace period**: on a challenge page the controller gives Browserbase up to 45 seconds (15-second polls) to solve it before handing control to you. Local runs hand over at once.
+- **One submit click**: submission needs a passing audit, a screenshot (`applicationArtifacts.ts`), your approval, and exactly one click with no retry.
 
 ## Flow
 1. Receives target ATS application URL (e.g. Lever, Greenhouse).

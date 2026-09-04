@@ -1,16 +1,12 @@
 # src/resolver/
 
 ## Responsibility
-Extracts and resolves external company/ATS application URLs from raw LinkedIn job postings, providing deterministic navigation, LLM-based fallback, destination validation, and runtime secret redaction.
+Turns a raw LinkedIn job post into an employer or ATS application URL, with destination checks and secret redaction.
 
 ## Design
-- **Pipeline / Controller Pattern**: `resolveDirectLinkedInJob` coordinates input parsing (`ResolverInputSchema`), browser initialization, deterministic DOM inspection, Mastra agent execution, destination validation, and snapshot compaction.
-- **Deterministic-First, LLM-Fallback**: Prefers zero-token DOM extraction of external apply links before engaging Stagehand or Mastra LLM reasoning.
-- **Destination Invariant Validation**: `validateDestination` applies strict deterministic rules to candidate URLs:
-  - Must be valid HTTPS external URL (strictly non-LinkedIn).
-  - Rejects login walls, signup redirects, and auth checkpoints.
-  - Recognizes known ATS canonical patterns (Lever, Greenhouse, Workday, Ashby, Taleo, etc.).
-- **Redaction & Safety**: `browserSafety.ts` dynamically aggregates environment secrets (`collectEnvSecrets`) and scrubs them from error messages and logs (`safeError`).
+- **DOM first, Stagehand on ambiguity**: reads apply links from the page before running model reasoning.
+- **Destination checks**: `validateDestination` accepts a URL only when it uses HTTPS, leaves LinkedIn, points at a job page (not a generic careers page), and matches the company and role with visible evidence. Login walls and search pages fail.
+- **Secret redaction**: `browserSafety.ts` gathers live secrets (`collectEnvSecrets`) and strips them from errors and logs (`safeError`).
 
 ## Flow
 1. Receives `{ linkedinUrl }` and initializes Mastra agent runtime and browser CDP session.

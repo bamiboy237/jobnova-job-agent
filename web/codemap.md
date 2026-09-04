@@ -1,17 +1,17 @@
 # web/
 
 ## Responsibility
-Container directory for the Next.js frontend application, managing static export configuration, client TypeScript settings, page components, and streaming transport libraries.
+The Next.js chat UI, built to static files and served by the server.
 
 ## Design
-- **Static Export Configuration (`next.config.ts`)**: Configured with `output: "export"`, exporting static HTML, CSS, and JS bundles to `web/out/` during `npm run build:web`.
-- **Decoupled Client**: The web application communicates purely over HTTP/SSE with the backend server, allowing it to be compiled independently and served directly from memory or disk by `src/server.ts`.
+- **Static export (`next.config.ts`)**: `output: "export"` writes the bundle to `web/out/` on `npm run build:web`.
+- **Talks HTTP/SSE only**: the UI compiles on its own and `src/server.ts` serves the result.
 
 ## Subdirectories
 | Directory | Responsibility | Map |
 | :--- | :--- | :--- |
-| [`web/app/`](file:///Users/king/Desktop/takehome/web/app/codemap.md) | Next.js App Router root containing page layouts, chat workspace, and resolver card. | [View Map](app/codemap.md) |
-| [`web/lib/`](file:///Users/king/Desktop/takehome/web/lib/codemap.md) | Client transport layer bridging SSE career events to Vercel AI SDK UI chunks. | [View Map](lib/codemap.md) |
+| [`web/app/`](app/codemap.md) | Chat workspace, access gate, and resolver card. | [View Map](app/codemap.md) |
+| [`web/lib/`](lib/codemap.md) | SSE career events to AI SDK message chunks. | [View Map](lib/codemap.md) |
 
 ## Integration
 - **Build Output**: Compiles into `web/out/`.
