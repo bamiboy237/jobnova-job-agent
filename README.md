@@ -4,7 +4,7 @@ Jobnova combines Projects 2 and 3 of the take-home in one deployed product. Past
 
 ## Try the deployed product
 
-**Live URL:** `OWNER_TO_ADD_RAILWAY_URL`
+**Live URL:** https://web-production-20784.up.railway.app
 
 **Invite code:** `OWNER_TO_SHARE_SEPARATELY`
 

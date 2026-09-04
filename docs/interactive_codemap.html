@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jobnova — Architecture and Codebase Documentation</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-subtle: #f8fafc;
+      --bg-card: #ffffff;
+      --border: #e2e8f0;
+      --border-focus: #0f172a;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --code-bg: #f1f5f9;
+      --accent: #0f172a;
+      --accent-text: #ffffff;
+      --tag-bg: #e2e8f0;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg: #090d16;
+      --bg-subtle: #0f172a;
+      --bg-card: #131d33;
+      --border: #1e293b;
+      --border-focus: #f8fafc;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --code-bg: #1e293b;
+      --accent: #f8fafc;
+      --accent-text: #090d16;
+      --tag-bg: #1e293b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Layout */
+    .app-layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+
+    /* Sidebar Navigation */
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      background-color: var(--bg-subtle);
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 0 8px;
+    }
+
+    .brand-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .search-box {
+      position: relative;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--border-focus);
+    }
+
+    .nav-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      padding: 6px 8px;
+      margin-top: 4px;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-radius: 5px;
+      transition: all 0.1s ease;
+    }
+
+    .nav-link:hover {
+      background-color: var(--border);
+      color: var(--text);
+    }
+
+    .nav-link.active {
+      background-color: var(--text);
+      color: var(--bg);
+      font-weight: 600;
+    }
+
+    .nav-pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background-color: var(--tag-bg);
+      color: var(--text-muted);
+    }
+
+    .nav-link.active .nav-pill {
+      background-color: var(--bg);
+      color: var(--text);
+    }
+
+    /* Main Content */
+    .main-content {
+      padding: 40px 56px 120px;
+      max-width: 980px;
+    }
+
+    header.doc-header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .title-block h1 {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+
+    .title-block p {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .theme-toggle-btn {
+      padding: 5px 10px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      background-color: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .theme-toggle-btn:hover {
+      border-color: var(--text);
+    }
+
+    /* Sections */
+    section.doc-section {
+      margin-bottom: 48px;
+      scroll-margin-top: 40px;
+    }
+
+    h2.section-heading {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 14px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3.sub-heading {
+      font-size: 14px;
+      font-weight: 600;
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+
+    p {
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    /* Code and Blocks */
+    pre, code {
+      font-family: var(--font-mono);
+    }
+
+    code.inline-code {
+      font-size: 12px;
+      background-color: var(--code-bg);
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: var(--text);
+    }
+
+    pre.code-block {
+      background-color: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: auto;
+      margin: 12px 0;
+      color: var(--text);
+    }
+
+    /* Tables */
+    table.spec-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 12.5px;
+    }
+
+    table.spec-table th,
+    table.spec-table td {
+      padding: 9px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    table.spec-table th {
+      background-color: var(--bg-subtle);
+      font-weight: 600;
+      color: var(--text);
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    table.spec-table td strong {
+      color: var(--text);
+    }
+
+    /* Interactive Component Cards */
+    .component-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .component-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+
+    .component-card:hover {
+      border-color: var(--text);
+      transform: translateY(-1px);
+    }
+
+    .component-card.selected {
+      border-color: var(--text);
+      background-color: var(--bg-subtle);
+    }
+
+    .component-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .component-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .component-files-count {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--text-dim);
+    }
+
+    .component-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    /* Detail Inspector Drawer */
+    .inspector-panel {
+      margin-top: 14px;
+      padding: 18px;
+      background-color: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: none;
+    }
+
+    .inspector-panel.visible {
+      display: block;
+    }
+
+    /* Lists */
+    ul.bullet-list, ol.num-list {
+      margin: 10px 0 14px 20px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    ul.bullet-list li, ol.num-list li {
+      margin-bottom: 6px;
+    }
+
+    ul.bullet-list li strong, ol.num-list li strong {
+      color: var(--text);
+    }
+
+    /* Responsive */
+    @media (max-width: 860px) {
+      .app-layout {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        display: none;
+      }
+      .main-content {
+        padding: 24px 20px 80px;
+      }
+    }
+  </style>
+</head>
+<body data-theme="light">
+
+  <div class="app-layout">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-title">JOBNOVA ARCHITECTURE</div>
+        <div class="brand-subtitle">Codebase Codemap and Developer Guide</div>
+      </div>
+
+      <div class="search-box">
+        <input type="text" id="docSearch" class="search-input" placeholder="Filter sections and modules..." onkeyup="filterDocs()" />
+      </div>
+
+      <nav class="nav-group">
+        <div class="nav-group-title">Orientation</div>
+        <a href="#overview" class="nav-link active" onclick="setActiveNav(this)">
+          <span>System Overview</span>
+        </a>
+        <a href="#architecture" class="nav-link" onclick="setActiveNav(this)">
+          <span>Architecture Boundaries</span>
+        </a>
+        <a href="#entrypoints" class="nav-link" onclick="setActiveNav(this)">
+          <span>System Entry Points</span>
+        </a>
+
+        <div class="nav-group-title">Module Directory Map</div>
+        <a href="#module-resolver" class="nav-link" onclick="setActiveNav(this)">
+          <span>src/resolver/</span>
+          <span class="nav-pill">3 files</span>
+        </a>
+        <a href="#module-apply" class="nav-link" onclick="setActiveNav(this)">
+          <span>src/apply/</span>
+          <span class="nav-pill">19 files</span>
+        </a>
+        <a href="#module-career" class="nav-link" onclick="setActiveNav(this)">
+          <span>src/career/</span>
+          <span class="nav-pill">2 files</span>
+        </a>
+        <a href="#module-mastra" class="nav-link" onclick="setActiveNav(this)">
+          <span>src/mastra/</span>
+          <span class="nav-pill">5 files</span>
+        </a>
+        <a href="#module-browser" class="nav-link" onclick="setActiveNav(this)">
+          <span>src/browser/</span>
+          <span class="nav-pill">2 files</span>
+        </a>
+        <a href="#module-server" class="nav-link" onclick="setActiveNav(this)">
+          <span>src/server/ & HTTP</span>
+          <span class="nav-pill">3 files</span>
+        </a>
+        <a href="#module-web" class="nav-link" onclick="setActiveNav(this)">
+          <span>web/ (Next.js UI)</span>
+          <span class="nav-pill">4 files</span>
+        </a>
+
+        <div class="nav-group-title">Execution & Rules</div>
+        <a href="#dataflows" class="nav-link" onclick="setActiveNav(this)">
+          <span>End-to-End Pipelines</span>
+        </a>
+        <a href="#invariants" class="nav-link" onclick="setActiveNav(this)">
+          <span>Safety Invariants</span>
+        </a>
+        <a href="#workflows" class="nav-link" onclick="setActiveNav(this)">
+          <span>Developer Workflows</span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+
+      <!-- Header -->
+      <header class="doc-header">
+        <div class="title-block">
+          <h1>Jobnova Codebase Map &amp; Architecture</h1>
+          <p>Technical reference for navigating, extending, and testing the autonomous career agent.</p>
+        </div>
+        <button class="theme-toggle-btn" onclick="toggleTheme()" id="themeBtn">Switch to Dark Theme</button>
+      </header>
+
+      <!-- 1. System Overview -->
+      <section id="overview" class="doc-section">
+        <h2 class="section-heading">1 · System Overview</h2>
+        <p>
+          Jobnova is an autonomous career search and applicant tracking system (ATS) application product. It unifies two operations into one runtime:
+        </p>
+        <ol class="num-list">
+          <li><strong>Job Source Resolution:</strong> Resolves raw LinkedIn job URLs to direct employer or external ATS application links (such as Lever, Greenhouse, or Workday).</li>
+          <li><strong>Guarded Application Automation:</strong> Guides candidate interactions through real-time chat, inspects application forms, completes fields with candidate facts, prompts privately for unknown values, and halts for explicit human approval before submitting.</li>
+        </ol>
+        <p>
+          The system runs as a single-process Node 22 server. It couples a Mastra agent runtime to Playwright browser automation (local Chrome or remote Browserbase instances), serving both backend REST/SSE APIs and a statically compiled Next.js single-page application.
+        </p>
+      </section>
+
+      <!-- 2. Architecture Boundaries -->
+      <section id="architecture" class="doc-section">
+        <h2 class="section-heading">2 · Architecture &amp; Boundary Separation</h2>
+        <p>
+          Jobnova separates intent reasoning from browser mutations and candidate data storage. The model never receives direct access to the DOM or candidate personal data:
+        </p>
+
+        <pre class="code-block">
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1. Client Presentation Layer (web/)                                         │
+│    Next.js SPA · Vercel AI SDK useChat · JobnovaTransport (SSE translation) │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 2. HTTP Server & Session State (src/server.ts, src/server/runStore.ts)       │
+│    Single Node 22 process · Access gate · RunStore SQLite persistence       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 3. Agent Coordination Runtime (src/career/careerAgent.ts)                   │
+│    Mastra unified thread loop · Tool dispatches · Compaction middleware     │
+├──────────────────────────────────────┬──────────────────────────────────────┤
+│ 4. LinkedIn Resolver (src/resolver/) │ 5. Guarded Apply Engine (src/apply/) │
+│    - Deterministic DOM extraction   │    - pageInspection (@ref handles)   │
+│    - Stagehand AI fallback           │    - execute_application_actions     │
+│    - validateDestination() checking  │    - candidateCatalog (memory bind)  │
+├──────────────────────────────────────┴──────────────────────────────────────┤
+│ 6. Browser Session Management (src/browser/)                                │
+│    CDP connectivity · Browserbase remote · Local Chrome debugging           │
+└─────────────────────────────────────────────────────────────────────────────┘
+        </pre>
+
+        <p>
+          Key architectural separation:
+        </p>
+        <ul class="bullet-list">
+          <li><strong>Value-Free Representation:</strong> When inspecting form fields, <code>pageInspection.ts</code> maps DOM inputs to synthetic ref tokens (like <code>@first</code> or <code>@email</code>). The model plans actions using these tokens and semantic keys.</li>
+          <li><strong>Guarded Execution:</strong> Real values are bound in memory within pure TypeScript functions (<code>candidateCatalog.ts</code>). Form inputs are written to the browser without reflecting raw values back to model conversation history.</li>
+          <li><strong>One-Click Submission:</strong> Autonomous submission retry is prohibited. The engine captures a pre-submission screenshot and suspends execution until the user manually confirms.</li>
+        </ul>
+      </section>
+
+      <!-- 3. System Entry Points -->
+      <section id="entrypoints" class="doc-section">
+        <h2 class="section-heading">3 · System Entry Points</h2>
+        <p>
+          The codebase provides four execution entry points:
+        </p>
+
+        <table class="spec-table">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Type</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>src/server.ts</code></td>
+              <td>Production HTTP Server</td>
+              <td>Starts the unified server on <code>PORT</code> (default 3000). Serves API endpoints (<code>/api/runs</code>, <code>/api/chat</code>), Server-Sent Events, static Next.js assets from <code>web/out/</code>, and handles Railway health probes.</td>
+            </tr>
+            <tr>
+              <td><code>src/index.ts</code></td>
+              <td>CLI Resolver</td>
+              <td>Direct command-line tool. Invoked via <code>npm run resolve -- &lt;linkedin-url&gt;</code>. Resolves a single LinkedIn URL and prints structured JSON output to stdout.</td>
+            </tr>
+            <tr>
+              <td><code>src/apply/chatCli.ts</code></td>
+              <td>CLI Career Agent</td>
+              <td>Interactive terminal client. Invoked via <code>npm run apply:chat</code>. Launches a full conversational loop in the terminal supporting live tool feedback and user prompting.</td>
+            </tr>
+            <tr>
+              <td><code>src/auth.ts</code></td>
+              <td>Authentication Utility</td>
+              <td>Invoked via <code>npm run auth</code>. Launches a browser session to log in to LinkedIn interactively, saving session cookies for persistent local or Browserbase contexts.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 4. Interactive Module Directory Map -->
+      <section id="modules" class="doc-section">
+        <h2 class="section-heading">4 · Codebase Directory Map</h2>
+        <p>
+          Click any module below to inspect its responsibilities, internal files, and primary dependencies:
+        </p>
+
+        <div class="component-grid">
+          <div class="component-card" onclick="selectComponent('resolver')">
+            <div class="component-header">
+              <span class="component-title">src/resolver/</span>
+              <span class="component-files-count">3 files</span>
+            </div>
+            <div class="component-desc">
+              LinkedIn job destination extraction, deterministic DOM link parsing, Stagehand fallback, and HTTPS invariant verification.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('apply')">
+            <div class="component-header">
+              <span class="component-title">src/apply/</span>
+              <span class="component-files-count">19 files</span>
+            </div>
+            <div class="component-desc">
+              ATS form engine, DOM control inspection, candidate catalog, batch action execution, resume upload, and submission safety.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('career')">
+            <div class="component-header">
+              <span class="component-title">src/career/</span>
+              <span class="component-files-count">2 files</span>
+            </div>
+            <div class="component-desc">
+              Single unified Mastra career agent. Coordinates user chat, role exploration, resolution, and batched input suspension.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('mastra')">
+            <div class="component-header">
+              <span class="component-title">src/mastra/</span>
+              <span class="component-files-count">5 files</span>
+            </div>
+            <div class="component-desc">
+              Mastra runtime configuration, LLM model routing, LibSQL storage, and context snapshot compaction.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('browser')">
+            <div class="component-header">
+              <span class="component-title">src/browser/</span>
+              <span class="component-files-count">2 files</span>
+            </div>
+            <div class="component-desc">
+              CDP session abstraction. Manages remote Browserbase sessions and local Chrome debugging instances.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('server')">
+            <div class="component-header">
+              <span class="component-title">src/server/</span>
+              <span class="component-files-count">1 file</span>
+            </div>
+            <div class="component-desc">
+              SQLite RunStore DAO managing detached resolver run lifecycles (queued, running, completed, failed).
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('web')">
+            <div class="component-header">
+              <span class="component-title">web/</span>
+              <span class="component-files-count">4 files</span>
+            </div>
+            <div class="component-desc">
+              Next.js frontend with minimal chat workspace, access code protection gate, quick resolver drawer, and AI SDK transport.
+            </div>
+          </div>
+        </div>
+
+        <!-- Dynamic Inspector Panel -->
+        <div id="inspectorPanel" class="inspector-panel">
+          <h3 id="inspectorTitle" class="sub-heading" style="margin-top:0;">Module Details</h3>
+          <p id="inspectorDescription"></p>
+          <div id="inspectorContent"></div>
+        </div>
+      </section>
+
+      <!-- Deep Dive Module Sections -->
+      <section id="module-resolver" class="doc-section">
+        <h2 class="section-heading">Module: src/resolver/</h2>
+        <p>
+          Resolves external employer and ATS application links from LinkedIn postings.
+        </p>
+        <table class="spec-table">
+          <thead>
+            <tr><th>File</th><th>Key Symbols</th><th>Responsibility</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>directResolver.ts</code></td>
+              <td><code>resolveDirectLinkedInJob()</code></td>
+              <td>Coordinates deterministic DOM inspection first. Falls back to Stagehand only when page structure is ambiguous. Compresses tokens with snapshot compaction.</td>
+            </tr>
+            <tr>
+              <td><code>validateDestination.ts</code></td>
+              <td><code>validateDestination()</code></td>
+              <td>Validates that resolved URLs are valid HTTPS, strictly non-LinkedIn, match recognized ATS canonical patterns (Lever, Greenhouse), and match the target role.</td>
+            </tr>
+            <tr>
+              <td><code>browserSafety.ts</code></td>
+              <td><code>safeError()</code>, <code>collectEnvSecrets()</code></td>
+              <td>Collects active API keys and environment secrets, sanitizing error objects to ensure secrets never leak into logs or API responses.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="module-apply" class="doc-section">
+        <h2 class="section-heading">Module: src/apply/</h2>
+        <p>
+          Implements autonomous form completion while maintaining candidate data privacy.
+        </p>
+        <table class="spec-table">
+          <thead>
+            <tr><th>File</th><th>Key Symbols</th><th>Responsibility</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>generalBrowserTools.ts</code></td>
+              <td><code>execute_application_actions</code>, <code>fill_fact</code></td>
+              <td>Tool factory. Batches up to 20 DOM actions in a single model turn. Enforces fail-stop or independent continuation. Binds data in memory.</td>
+            </tr>
+            <tr>
+              <td><code>candidateCatalog.ts</code></td>
+              <td><code>candidateProfileToCatalog()</code></td>
+              <td>Translates candidate JSON profile into a typed fact catalog for secure lookup during form fill.</td>
+            </tr>
+            <tr>
+              <td><code>pageInspection.ts</code></td>
+              <td><code>inspectCurrentPage()</code></td>
+              <td>Parses the DOM into structured <code>PageControl</code> objects. Assigns value-free <code>@ref</code> handles to every form control.</td>
+            </tr>
+            <tr>
+              <td><code>runLedger.ts</code></td>
+              <td><code>createRunLedger()</code></td>
+              <td>Tracks filled field keys and prevents redundant or conflicting mutations on previously completed inputs.</td>
+            </tr>
+            <tr>
+              <td><code>applicationArtifacts.ts</code></td>
+              <td><code>captureFullPageScreenshot()</code></td>
+              <td>Captures high-resolution page audit screenshots for pre-submission human review.</td>
+            </tr>
+            <tr>
+              <td><code>resume.ts</code></td>
+              <td><code>resolveResumePdf()</code></td>
+              <td>Locates and verifies approved candidate resume files on disk before attaching to file inputs.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="module-career" class="doc-section">
+        <h2 class="section-heading">Module: src/career/</h2>
+        <p>
+          Provides the conversational career agent and real-time event streaming.
+        </p>
+        <table class="spec-table">
+          <thead>
+            <tr><th>File</th><th>Key Symbols</th><th>Responsibility</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>careerAgent.ts</code></td>
+              <td><code>createCareerRuntime()</code>, <code>request_user_inputs</code></td>
+              <td>Defines the unified Mastra career agent. Supplies tools for conversation, job resolution, form filling, and consolidated user input requests.</td>
+            </tr>
+            <tr>
+              <td><code>careerSession.ts</code></td>
+              <td><code>CareerSession</code>, <code>CareerEvent</code></td>
+              <td>Manages session state, thread lifecycle, browser allocation, and idle release timers (10-minute timeout). Streams typed Server-Sent Events.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="module-mastra" class="doc-section">
+        <h2 class="section-heading">Module: src/mastra/</h2>
+        <p>
+          Manages the Mastra agent framework, LLM providers, and memory compaction.
+        </p>
+        <table class="spec-table">
+          <thead>
+            <tr><th>File</th><th>Key Symbols</th><th>Responsibility</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>compactSnapshots.ts</code></td>
+              <td><code>compactSupersededSnapshots()</code></td>
+              <td>Rewrites message history passed to <code>prepareStep</code>. Replaces historical DOM dumps with lightweight tombstones, preventing token inflation.</td>
+            </tr>
+            <tr>
+              <td><code>model.ts</code></td>
+              <td><code>getResolverModelConfig()</code></td>
+              <td>Resolves provider credentials and models based on <code>LLM_PROVIDER</code> (Gemini 3.6 Flash, OpenAI GPT-5.6, or DeepSeek).</td>
+            </tr>
+            <tr>
+              <td><code>storage.ts</code></td>
+              <td><code>initLibSqlStorage()</code></td>
+              <td>Initializes LibSQL SQLite storage for durable thread history across server restarts.</td>
+            </tr>
+            <tr>
+              <td><code>rateLimitRetry.ts</code></td>
+              <td><code>withRateLimitRetry()</code></td>
+              <td>Wraps model calls with exponential backoff to handle HTTP 429 rate limits gracefully.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="module-browser" class="doc-section">
+        <h2 class="section-heading">Module: src/browser/</h2>
+        <p>
+          Manages Chrome DevTools Protocol (CDP) connections for local and cloud environments.
+        </p>
+        <table class="spec-table">
+          <thead>
+            <tr><th>File</th><th>Key Symbols</th><th>Responsibility</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>cdpSession.ts</code></td>
+              <td><code>BrowserbaseSession</code>, <code>LocalChromeSession</code></td>
+              <td>Implements the <code>CdpSession</code> interface (<code>connect()</code>, <code>release()</code>). Manages remote cloud Chromium and local macOS Chrome processes.</td>
+            </tr>
+            <tr>
+              <td><code>session.ts</code></td>
+              <td><code>createRemoteSession()</code></td>
+              <td>Browserbase SDK connection wrapper configuring project ID, proxies, and persistent authenticated contexts.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="module-server" class="doc-section">
+        <h2 class="section-heading">Module: src/server/ &amp; HTTP Services</h2>
+        <p>
+          Handles HTTP routing, Server-Sent Events, static asset serving, and SQLite persistence.
+        </p>
+        <table class="spec-table">
+          <thead>
+            <tr><th>File</th><th>Key Symbols</th><th>Responsibility</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>src/server.ts</code></td>
+              <td><code>createJobnovaServer()</code></td>
+              <td>Main HTTP server. Serves API endpoints, static assets from <code>web/out/</code>, HEAD/GET health checks, and protects private routes via <code>x-access-code</code>.</td>
+            </tr>
+            <tr>
+              <td><code>src/server/runStore.ts</code></td>
+              <td><code>RunStore</code></td>
+              <td>Database access object for the <code>jobnova_runs</code> SQLite table. Tracks detached run status, results, runtimes, and traces.</td>
+            </tr>
+            <tr>
+              <td><code>src/types.ts</code></td>
+              <td><code>ResolverResult</code>, <code>ApplicationResult</code></td>
+              <td>Zod schemas and TypeScript interfaces establishing contracts across the entire codebase.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="module-web" class="doc-section">
+        <h2 class="section-heading">Module: web/ (Next.js Frontend)</h2>
+        <p>
+          Client-side user interface exported as static HTML/CSS/JS bundles.
+        </p>
+        <table class="spec-table">
+          <thead>
+            <tr><th>File</th><th>Key Symbols</th><th>Responsibility</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>web/lib/jobnova-transport.ts</code></td>
+              <td><code>JobnovaTransport</code></td>
+              <td>Custom Vercel AI SDK <code>ChatTransport</code>. Converts raw Jobnova SSE packets into typed AI SDK UI chunks (text, activity chips, interaction cards).</td>
+            </tr>
+            <tr>
+              <td><code>web/app/page.tsx</code></td>
+              <td><code>ChatWorkspace</code>, <code>AccessGate</code></td>
+              <td>Single-page chat workspace, invite code access gate, quick URL resolver drawer, and inline suspension response forms.</td>
+            </tr>
+            <tr>
+              <td><code>web/next.config.ts</code></td>
+              <td><code>output: "export"</code></td>
+              <td>Static export build configuration outputting bundles to <code>web/out/</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 5. End-to-End Pipelines -->
+      <section id="dataflows" class="doc-section">
+        <h2 class="section-heading">5 · End-to-End Execution Pipelines</h2>
+
+        <h3 class="sub-heading">Pipeline A: Resolving a LinkedIn Job Posting</h3>
+        <ol class="num-list">
+          <li><strong>Submission:</strong> User submits a LinkedIn job URL via web UI or CLI (<code>src/index.ts</code>).</li>
+          <li><strong>Deterministic DOM Extraction:</strong> <code>directResolver.ts</code> navigates to the page and inspects the DOM for direct external apply links. If found, it extracts the target URL immediately (zero LLM tokens used).</li>
+          <li><strong>AI Fallback:</strong> If the link is obscured or multi-step, Stagehand observes page elements and clicks through redirects.</li>
+          <li><strong>Invariant Validation:</strong> <code>validateDestination.ts</code> verifies that the resolved URL is HTTPS, external to LinkedIn, and points to a known ATS or valid careers page.</li>
+          <li><strong>Persistence:</strong> The resolved destination and execution metrics persist to SQLite (<code>RunStore</code>).</li>
+        </ol>
+
+        <h3 class="sub-heading">Pipeline B: Multi-Turn Career Guidance &amp; ATS Application</h3>
+        <ol class="num-list">
+          <li><strong>Message Ingestion:</strong> User message streams into <code>POST /api/chat/:id/message</code>.</li>
+          <li><strong>Context Compaction:</strong> <code>compactSupersededSnapshots</code> deletes stale DOM snapshots from earlier turns in <code>prepareStep</code>.</li>
+          <li><strong>Form Control Discovery:</strong> <code>pageInspection.ts</code> scans the active ATS page, assigning synthetic <code>@ref</code> identifiers.</li>
+          <li><strong>Batch Execution:</strong> Agent invokes <code>execute_application_actions</code> with up to 20 operations (filling facts, selecting options). Actions run sequentially in pure TypeScript.</li>
+          <li><strong>Interactive Suspension:</strong> If private candidate data is missing, the agent calls <code>request_user_inputs</code>. The turn pauses; client displays a single consolidated form card.</li>
+          <li><strong>Pre-Submission Audit:</strong> The agent captures a full-page screenshot.</li>
+          <li><strong>Human Confirmation:</strong> Execution pauses. The user reviews the screenshot and clicks <strong>Confirm submission</strong>. Only then does the engine execute the single final click.</li>
+        </ol>
+      </section>
+
+      <!-- 6. Operational Invariants -->
+      <section id="invariants" class="doc-section">
+        <h2 class="section-heading">6 · Architectural &amp; Safety Invariants</h2>
+        <p>
+          Enforce these four invariants across all contributions:
+        </p>
+        <table class="spec-table">
+          <thead>
+            <tr><th>Invariant</th><th>Enforcement Location</th><th>Rule</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Candidate Data Isolation</strong></td>
+              <td><code>src/apply/generalBrowserTools.ts</code></td>
+              <td>Model prompts receive only structural references (<code>@ref</code>) and semantic fact keys. Real values are bound in memory within TypeScript and never returned in tool responses.</td>
+            </tr>
+            <tr>
+              <td><strong>One-Click Submission</strong></td>
+              <td><code>src/apply/generalBrowserTools.ts</code></td>
+              <td>Automated retry of final submission is prohibited. The engine must conduct a pre-submission DOM audit, save a full-page screenshot, and require explicit human authorization.</td>
+            </tr>
+            <tr>
+              <td><strong>Strict Destination Validation</strong></td>
+              <td><code>src/resolver/validateDestination.ts</code></td>
+              <td>Candidate URLs must use HTTPS and point outside LinkedIn. Reject login walls, registration prompts, and generic search listings.</td>
+            </tr>
+            <tr>
+              <td><strong>Browser Concurrency Ceiling</strong></td>
+              <td><code>src/server.ts</code> &amp; <code>src/career/careerSession.ts</code></td>
+              <td>Maintain at most two concurrent live browser sessions. Enforce a 10-minute idle release timer to release remote browser resources.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 7. Developer Workflows -->
+      <section id="workflows" class="doc-section">
+        <h2 class="section-heading">7 · Developer Workflows</h2>
+
+        <h3 class="sub-heading">Setup and Local Development</h3>
+        <pre class="code-block">
+# Install dependencies
+npm install
+
+# Build TypeScript backend and Next.js frontend
+npm run build
+
+# Run unit and integration tests
+npm test
+
+# Start local server on port 3000
+npm run serve
+        </pre>
+
+        <h3 class="sub-heading">Common Operational Tasks</h3>
+        <table class="spec-table">
+          <thead>
+            <tr><th>Goal</th><th>Command</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Resolve LinkedIn URL via CLI</td>
+              <td><code>npm run resolve -- &lt;linkedin-url&gt;</code></td>
+            </tr>
+            <tr>
+              <td>Interactive terminal career chat</td>
+              <td><code>npm run apply:chat</code></td>
+            </tr>
+            <tr>
+              <td>Authenticate LinkedIn session</td>
+              <td><code>npm run auth</code></td>
+            </tr>
+            <tr>
+              <td>Generate synthetic test profile</td>
+              <td><code>npm run profile:synthetic</code></td>
+            </tr>
+            <tr>
+              <td>Test Lever form fill without submit</td>
+              <td><code>BROWSER_PROVIDER=local npm run apply:test -- --url &lt;lever-url&gt;</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+    </main>
+
+  </div>
+
+  <script>
+    // Module Data for Interactive Inspector
+    const moduleDetails = {
+      resolver: {
+        title: "src/resolver/ (LinkedIn Job Resolver)",
+        desc: "Extracts direct company and ATS apply URLs from raw LinkedIn postings using deterministic DOM link parsing and Stagehand fallback.",
+        files: [
+          "directResolver.ts: Coordinates deterministic extraction, Stagehand fallback, and snapshot compaction.",
+          "validateDestination.ts: Validates HTTPS external ATS URLs, canonical pattern matches, and role criteria.",
+          "browserSafety.ts: Collects active environment secrets and sanitizes exception messages."
+        ]
+      },
+      apply: {
+        title: "src/apply/ (Guarded Form Automation)",
+        desc: "Automates form filling on Lever and generic ATS pages while strictly isolating candidate secrets from language model context.",
+        files: [
+          "generalBrowserTools.ts: Factory for guarded actions; batches up to 20 form inputs per turn.",
+          "candidateCatalog.ts: Resolves candidate profile JSON into typed memory fact catalogs.",
+          "pageInspection.ts: Scans DOM controls and assigns value-free @ref handles.",
+          "runLedger.ts: Records completed field keys to prevent duplicate inputs.",
+          "applicationArtifacts.ts: Captures full-page screenshots for pre-submission human audit.",
+          "resume.ts: Verifies and attaches candidate PDF resumes."
+        ]
+      },
+      career: {
+        title: "src/career/ (Conversational Agent & Session)",
+        desc: "Maintains a single continuous Mastra thread for career dialogue, job search, role analysis, and guided application submission.",
+        files: [
+          "careerAgent.ts: Mastra career agent definition, system prompts, and request_user_inputs tool.",
+          "careerSession.ts: Manages session lifecycle, browser pooling, 10-minute idle release, and SSE streaming."
+        ]
+      },
+      mastra: {
+        title: "src/mastra/ (Runtime Configuration)",
+        desc: "Manages Mastra LLM provider configuration, persistent LibSQL memory storage, and context window compaction.",
+        files: [
+          "compactSnapshots.ts: Rewrites message history to replace stale DOM dumps with compact tombstones.",
+          "model.ts: Configures Gemini, OpenAI, or DeepSeek providers.",
+          "storage.ts: Initializes LibSQL SQLite storage for conversation persistence across restarts.",
+          "rateLimitRetry.ts: Intercepts HTTP 429 exceptions with exponential backoff."
+        ]
+      },
+      browser: {
+        title: "src/browser/ (Browser Session Manager)",
+        desc: "Provides unified Chrome DevTools Protocol (CDP) session management across remote Browserbase and local Chrome instances.",
+        files: [
+          "cdpSession.ts: Unified CdpSession interface (BrowserbaseSession and LocalChromeSession).",
+          "session.ts: Browserbase SDK connection wrapper configuring proxies and persistent context IDs."
+        ]
+      },
+      server: {
+        title: "src/server/ & HTTP Routes",
+        desc: "Single-process HTTP server serving API routes, Server-Sent Events, static Next.js assets, and SQLite run storage.",
+        files: [
+          "src/server.ts: Central server, route dispatchers, static asset serving, and Railway health checks.",
+          "src/server/runStore.ts: SQLite DAO managing detached job resolution run states.",
+          "src/types.ts: Core contract schemas and Zod validators."
+        ]
+      },
+      web: {
+        title: "web/ (Next.js Client Application)",
+        desc: "Statically exported single-page application built with Next.js, Tailwind CSS, and the Vercel AI SDK.",
+        files: [
+          "web/lib/jobnova-transport.ts: Custom AI SDK ChatTransport translating SSE packets into UI message chunks.",
+          "web/app/page.tsx: Clean chat interface, Access Gate modal, quick resolver drawer, and interaction cards.",
+          "web/next.config.ts: Configures static export (output: 'export') to web/out/."
+        ]
+      }
+    };
+
+    function selectComponent(key) {
+      document.querySelectorAll('.component-card').forEach(c => c.classList.remove('selected'));
+      event.currentTarget.classList.add('selected');
+
+      const data = moduleDetails[key];
+      if (!data) return;
+
+      const panel = document.getElementById('inspectorPanel');
+      document.getElementById('inspectorTitle').innerText = data.title;
+      document.getElementById('inspectorDescription').innerText = data.desc;
+      
+      let html = '<ul class="bullet-list" style="margin-top:8px;">';
+      data.files.forEach(f => {
+        const parts = f.split(':');
+        html += `<li><code>${parts[0]}</code>: ${parts[1]}</li>`;
+      });
+      html += '</ul>';
+      document.getElementById('inspectorContent').innerHTML = html;
+      panel.classList.add('visible');
+    }
+
+    function setActiveNav(el) {
+      document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+      el.classList.add('active');
+    }
+
+    function toggleTheme() {
+      const current = document.body.getAttribute('data-theme') || 'light';
+      const next = current === 'light' ? 'dark' : 'light';
+      document.body.setAttribute('data-theme', next);
+      document.getElementById('themeBtn').innerText = next === 'light' ? 'Switch to Dark Theme' : 'Switch to Light Theme';
+    }
+
+    function filterDocs() {
+      const query = document.getElementById('docSearch').value.toLowerCase();
+      document.querySelectorAll('.nav-link').forEach(link => {
+        const text = link.innerText.toLowerCase();
+        link.style.display = text.includes(query) ? 'flex' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>
