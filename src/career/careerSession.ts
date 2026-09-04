@@ -11,7 +11,7 @@ import { loadResumeFacts, resumesDir } from "../apply/resumeFacts.js";
 import { resolveApprovedResume } from "../apply/resume.js";
 import type { FactValue } from "../apply/generalFacts.js";
 import { createRunLedger, type ApplicationRunLedger } from "../apply/runLedger.js";
-import { createCareerRuntime, type CareerMode, type CareerRuntimeState } from "./careerAgent.js";
+import { createCareerRuntime, normalizeCandidateUrl, unwrapRedirectUrl, type CareerMode, type CareerRuntimeState } from "./careerAgent.js";
 
 const MAX_CAREER_STEPS = 60;
 export const CAREER_SESSION_PATH = path.resolve(process.cwd(), ".career-session.json");
@@ -126,7 +126,15 @@ async function writeCareerSessionState(state: PersistedCareerSessionState): Prom
 }
 
 function urlsIn(message: string): Set<string> {
-  return new Set(message.match(/https?:\/\/[^\s"'`<>]+/gi)?.map((url) => url.replace(/[.,;)]+$/, "")) ?? []);
+  const found = new Set<string>();
+  for (const raw of message.match(/https?:\/\/[^\s"'`<>]+/gi) ?? []) {
+    const cleaned = raw.replace(/[.,;)]+$/, "");
+    for (const candidate of [cleaned, ...unwrapRedirectUrl(cleaned)]) {
+      const normalized = normalizeCandidateUrl(candidate);
+      if (normalized) found.add(normalized);
+    }
+  }
+  return found;
 }
 
 function isInteraction(value: unknown): value is CareerInteraction {
@@ -266,6 +274,7 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
       return (async function* () { yield { type: "error", error: expectsBatch ? "All requested private values are required" : "This interaction accepts one response" } as CareerEvent; })();
     }
     pending = undefined;
+    if (typeof input === "string") for (const url of urlsIn(input)) state.allowedUrls.add(url);
     const normalized = typeof input === "string" ? input.trim().toLowerCase() : "";
     let resumeData: { value: string } | { values: string[] } | { approved: boolean; value?: string } | { approved: boolean };
     if (suspended.interaction.kind === "user_input") resumeData = { value: input as string };

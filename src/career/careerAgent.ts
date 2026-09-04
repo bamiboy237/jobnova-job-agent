@@ -34,6 +34,46 @@ interface BoundAnswer {
   kind: PageControl["kind"];
 }
 
+/** Normalizes a candidate URL for allow-list comparison: lowercase host, no fragment, no trailing slash. */
+export function normalizeCandidateUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    url.hostname = url.hostname.toLocaleLowerCase();
+    url.hash = "";
+    if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, "");
+    return url.toString();
+  } catch { return undefined; }
+}
+
+const REDIRECT_PARAMETERS = new Set(["q", "url", "u", "redirect", "redir", "dest", "destination", "target", "r"]);
+
+/** Unwraps redirect/search wrapper links (e.g. Google /url?q=...) to the destinations hidden in their query parameters. */
+export function unwrapRedirectUrl(value: string, depth = 0): string[] {
+  if (depth > 2) return [];
+  try {
+    const url = new URL(value);
+    const found: string[] = [];
+    for (const [name, param] of url.searchParams) {
+      if (!REDIRECT_PARAMETERS.has(name.toLocaleLowerCase())) continue;
+      let decoded = param.trim();
+      try { decoded = decodeURIComponent(decoded); } catch { /* keep raw value */ }
+      if (/^https?:\/\//i.test(decoded)) found.push(decoded, ...unwrapRedirectUrl(decoded, depth + 1));
+    }
+    return found;
+  } catch { return []; }
+}
+
+/** True when the URL matches a user-supplied allow-list entry after normalization. Tolerates legacy raw entries. */
+export function isSuppliedJobUrl(allowedUrls: Set<string>, url: string): boolean {
+  const normalized = normalizeCandidateUrl(url);
+  if (!normalized) return false;
+  for (const allowed of allowedUrls) {
+    if (normalizeCandidateUrl(allowed) === normalized) return true;
+  }
+  return false;
+}
+
 export interface CareerRuntimeState {
   mode: CareerMode;
   allowedUrls: Set<string>;
@@ -49,7 +89,7 @@ const instructions = `You are Jobnova, a conversational career agent. Converse n
 You own orchestration. The client never decides workflow phases for you.
 
 Job protocol:
-1. When the user supplies a job URL and asks you to inspect, resolve, or apply, call open_supplied_job. Never invent or navigate to a URL from memory.
+1. When the user supplies job URLs and asks you to inspect, resolve, or apply, call open_supplied_job once per URL and work through the whole list. Links supplied earlier in the conversation stay usable; never ask the user to re-paste a link they already sent. Never invent or navigate to a URL from memory.
 2. In resolution mode, inspect the current page with browser_snapshot. Use visible evidence and Stagehand interpretation when needed. General navigation and exact ref clicks are available only in this mode. Resolve LinkedIn listings to the matching external job-specific page.
 3. When the browser reaches an application form, call enter_application_mode. Generic navigation and browser mutations are then blocked.
 4. In application mode, use inspect_current_page and application_capabilities before mapping fields. Retrieve approved facts with one candidate_get call listing every key the page needs; use lookup_candidate_fact only for a single late semantic comparison.
@@ -181,10 +221,10 @@ export function createCareerRuntime(modelConfig: ResolverModelConfig, catalog: C
   const careerTools = {
     open_supplied_job: createTool({
       id: "open_supplied_job",
-      description: "Open one exact job URL supplied in the latest user message and begin isolated job work.",
+      description: "Open one job URL the user has supplied anywhere in this conversation and begin isolated job work. Pass the URL as the user wrote it.",
       inputSchema: z.object({ url: z.string() }),
       execute: async ({ url }, { agent }) => {
-        if (!state.allowedUrls.has(url) || !isAllowedApplicationUrl(url)) return { success: false, error: "URL was not supplied by the user in the current turn" };
+        if (!isSuppliedJobUrl(state.allowedUrls, url) || !isAllowedApplicationUrl(url)) return { success: false, error: "That URL is not among the job links the user supplied in this conversation. Open one of the supplied links; never invent or modify URLs." };
         state.mode = "resolving";
         state.currentJobUrl = url;
         state.jobStartedAt = Date.now();

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { canUseApplicationTool, canUseBrowserMutation, canUseStagehand, findControlByIdentity, secureInputMetadata } from "../src/career/careerAgent.js";
+import { canUseApplicationTool, canUseBrowserMutation, canUseStagehand, findControlByIdentity, isSuppliedJobUrl, normalizeCandidateUrl, secureInputMetadata, unwrapRedirectUrl } from "../src/career/careerAgent.js";
 import { createCareerSession, parseCareerSessionState, serializeCareerSessionState, type CareerEvent, type CareerSessionDependencies } from "../src/career/careerSession.js";
 import { createRunLedger, recordCompletion } from "../src/apply/runLedger.js";
 
@@ -79,6 +79,44 @@ describe("conversational career session", () => {
     expect(new Set(fixture.options.map((option) => option.memory.thread))).toEqual(new Set([session.threadId]));
     expect(fixture.state().allowedUrls).toEqual(new Set(["https://jobs.example.test/one", "https://jobs.example.test/two"]));
     await session.close();
+  });
+
+  it("unwraps redirect wrappers and normalizes user-supplied links", async () => {
+    const fixture = setup();
+    const session = await createCareerSession(fixture.deps);
+    await collect(session.sendMessage("Try https://www.google.com/url?q=https%3A%2F%2Fwww.linkedin.com%2Fjobs%2Fview%2F4443791348%2F&sa=D and https://jobs.example.test/role/#details"));
+    expect(fixture.state().allowedUrls).toEqual(new Set([
+      "https://www.google.com/url?q=https%3A%2F%2Fwww.linkedin.com%2Fjobs%2Fview%2F4443791348%2F&sa=D",
+      "https://www.linkedin.com/jobs/view/4443791348",
+      "https://jobs.example.test/role",
+    ]));
+    await session.close();
+  });
+
+  it("registers links pasted as a reply while suspended", async () => {
+    const fixture = setup();
+    fixture.setChunks([{ type: "tool-call-suspended", payload: { toolCallId: "input-1", toolName: "request_user_input", args: {}, resumeSchema: "{}", suspendPayload: { kind: "user_input", requestId: "input-1", label: "Job link", inputType: "text", options: [], key: "job.url" } } }]);
+    const session = await createCareerSession(fixture.deps);
+    await collect(session.sendMessage("I want to apply somewhere"));
+    await collect(session.respond("Here: https://jobs.example.test/late/"));
+    expect(fixture.state().allowedUrls).toContain("https://jobs.example.test/late");
+    await session.close();
+  });
+
+  it("matches supplied links despite trailing slashes, fragments, and host case", () => {
+    const allowed = new Set(["https://www.linkedin.com/jobs/view/4443791348"]);
+    expect(isSuppliedJobUrl(allowed, "https://www.linkedin.com/jobs/view/4443791348/")).toBe(true);
+    expect(isSuppliedJobUrl(allowed, "https://www.LINKEDIN.com/jobs/view/4443791348#apply")).toBe(true);
+    expect(isSuppliedJobUrl(allowed, "https://www.linkedin.com/jobs/view/9999999999")).toBe(false);
+    expect(isSuppliedJobUrl(allowed, "not a url")).toBe(false);
+    expect(isSuppliedJobUrl(new Set(["https://jobs.example.test/legacy/"]), "https://jobs.example.test/legacy")).toBe(true);
+  });
+
+  it("normalizes and unwraps candidate URLs", () => {
+    expect(normalizeCandidateUrl("https://Jobs.Example.test/role/#top")).toBe("https://jobs.example.test/role");
+    expect(normalizeCandidateUrl("notaurl")).toBeUndefined();
+    expect(unwrapRedirectUrl("https://www.google.com/url?q=https%3A%2F%2Fexample.test%2Fjob&sa=D")).toEqual(["https://example.test/job"]);
+    expect(unwrapRedirectUrl("https://jobs.example.test/plain")).toEqual([]);
   });
 
   it("normalizes native suspension and resumes private input without adding it to model messages or events", async () => {
