@@ -834,6 +834,32 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   text-align: center;
 }
 
+.upload-status {
+  max-width: 760px;
+  margin: 6px auto 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.upload-dismiss {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+
+.upload-dismiss:hover {
+  background: var(--subtle);
+  color: var(--foreground);
+}
+
 /* Resolver Card */
 .resolver-card {
   margin-bottom: 24px;

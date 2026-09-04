@@ -63,8 +63,7 @@ export async function generateSyntheticResume(
       ModDate: new Date("2026-01-01T00:00:00Z"),
     },
   });
-  const output = await fsp.open(filePath, "w");
-  const writeStream = output.createWriteStream({ autoClose: false });
+  const writeStream = fs.createWriteStream(filePath);
   doc.pipe(writeStream);
 
   const line = (text: string, size = 11, gap = 14) => {
@@ -96,7 +95,6 @@ export async function generateSyntheticResume(
     writeStream.on("finish", () => resolve());
     doc.end();
   });
-  await writeStream.close();
   return filePath;
 }
 

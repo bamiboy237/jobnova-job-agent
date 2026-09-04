@@ -11,6 +11,7 @@ import {
   LoaderCircle,
   Menu,
   PanelLeftClose,
+  Paperclip,
   Search,
   ShieldCheck,
   Square,
@@ -241,8 +242,15 @@ function ChatWorkspace({
   });
   const [input, setInput] = useState("");
   const [responded, setResponded] = useState<Set<string>>(new Set());
+  const [upload, setUpload] = useState<
+    | { status: "idle" }
+    | { status: "uploading"; name: string }
+    | { status: "done"; name: string; facts: string[] }
+    | { status: "error"; message: string }
+  >({ status: "idle" });
   const endRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const busy = status === "submitted" || status === "streaming";
 
   useEffect(() => {
@@ -270,6 +278,33 @@ function ChatWorkspace({
     setResponded((current) => new Set(current).add(interaction.requestId));
     transport.setResponse(value);
     await resumeStream();
+  };
+
+  const uploadResume = async (file: File) => {
+    if (!file.type.includes("pdf") && !file.name.toLowerCase().endsWith(".pdf")) {
+      setUpload({ status: "error", message: "Resume must be a PDF file." });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUpload({ status: "error", message: "Resume must be under 10MB." });
+      return;
+    }
+    setUpload({ status: "uploading", name: file.name });
+    try {
+      const form = new FormData();
+      form.append("resume", file, file.name);
+      const response = await api("/api/files", { method: "POST", body: form });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        setUpload({ status: "error", message: body.error ?? "Upload failed." });
+        return;
+      }
+      const body = await response.json() as { resumeId: string; factsAdded: string[] };
+      const labels: Record<string, string> = { fullName: "name", firstName: "first name", lastName: "last name", email: "email", phone: "phone", currentLocation: "location", currentCompany: "company", school: "school", degree: "degree", fieldOfStudy: "field of study" };
+      setUpload({ status: "done", name: file.name, facts: body.factsAdded.map((key) => labels[key] ?? key) });
+    } catch (error) {
+      setUpload({ status: "error", message: error instanceof Error ? error.message : "Upload failed." });
+    }
   };
 
   return (
@@ -321,6 +356,28 @@ function ChatWorkspace({
 
       <div className="composer-wrap">
         <form className="composer" onSubmit={submit}>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            hidden
+            aria-label="Attach resume PDF"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void uploadResume(file);
+            }}
+          />
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Attach resume"
+            title="Attach resume (PDF, 10MB max)"
+            disabled={upload.status === "uploading"}
+            onClick={() => fileRef.current?.click()}
+          >
+            {upload.status === "uploading" ? <LoaderCircle className="spin" size={16} /> : <Paperclip size={16} />}
+          </button>
           <textarea
             ref={textareaRef}
             value={input}
@@ -353,6 +410,18 @@ function ChatWorkspace({
             </button>
           )}
         </form>
+        {upload.status !== "idle" && (
+          <p className="upload-status" role="status">
+            <span>
+              {upload.status === "uploading" && <>Uploading {upload.name}…</>}
+              {upload.status === "done" && <>Resume attached{upload.facts.length > 0 ? ` — picked up: ${upload.facts.join(", ")}` : "."}</>}
+              {upload.status === "error" && <>Couldn&apos;t attach it: {upload.message}</>}
+            </span>
+            <button className="upload-dismiss" type="button" aria-label="Dismiss" onClick={() => setUpload({ status: "idle" })}>
+              <X size={12} />
+            </button>
+          </p>
+        )}
         <p className="composer-footnote">
           Jobnova pauses for private answers and submission authorization.
         </p>

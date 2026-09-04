@@ -9,6 +9,10 @@ import { resolveDirectLinkedInJob } from "./resolver/directResolver.js";
 import { collectEnvSecrets, safeError } from "./resolver/browserSafety.js";
 import { ResolverInputSchema, type ResolverResult } from "./types.js";
 import { RunStore } from "./server/runStore.js";
+import Busboy from "busboy";
+import { PDFParse } from "pdf-parse";
+import { extractResumeFacts, loadResumeFacts, resumesDir, saveResumeFacts } from "./apply/resumeFacts.js";
+import { RESUME_FILE_NAME } from "./apply/resume.js";
 
 const MAX_LIVE_BROWSERS = 2;
 const SESSION_IDLE_MS = 10 * 60 * 1_000;
@@ -130,6 +134,10 @@ export async function createJobnovaServer(options: {
         }
       }
 
+      if (request.method === "POST" && url.pathname === "/api/files") {
+        return uploadResume(request, response);
+      }
+
       if (request.method === "POST" && url.pathname === "/api/chat") {
         const career = await createCareer(undefined, { persist: false });
         const sessionId = randomUUID();
@@ -191,6 +199,65 @@ export async function createJobnovaServer(options: {
     }
   });
   return server;
+}
+
+const MAX_RESUME_BYTES = 10 * 1024 * 1024;
+
+/** Resume upload: PDF only, parsed to facts on the server. Only fact keys leave this handler. */
+async function uploadResume(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  let upload: { filename: string; mimeType: string; data: Buffer } | undefined;
+  let tooBig = false;
+  try {
+    upload = await readMultipartFile(request, "resume", MAX_RESUME_BYTES);
+  } catch (error) {
+    tooBig = error instanceof Error && error.message === "resume too large";
+    if (!tooBig) return json(response, 400, { error: "A single resume file is required" });
+  }
+  if (tooBig || !upload) return json(response, 413, { error: "Resume must be under 10MB" });
+  const looksPdf = upload.filename.toLowerCase().endsWith(".pdf")
+    || upload.mimeType.toLowerCase().includes("pdf");
+  if (!looksPdf || upload.data.subarray(0, 5).toString() !== "%PDF-") {
+    return json(response, 400, { error: "Resume must be a PDF file" });
+  }
+  let text: string;
+  try {
+    const parser = new PDFParse({ data: upload.data });
+    text = (await parser.getText()).text;
+    await parser.destroy();
+  } catch {
+    return json(response, 400, { error: "Could not read that PDF" });
+  }
+  const facts = extractResumeFacts(text);
+  if (Object.keys(facts).length === 0) {
+    return json(response, 400, { error: "No contact details found in that PDF" });
+  }
+  const dir = resumesDir();
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, RESUME_FILE_NAME), upload.data);
+  const merged = { ...(await loadResumeFacts()), ...facts };
+  await saveResumeFacts(merged);
+  return json(response, 201, { resumeId: "primary", factsAdded: Object.keys(facts) });
+}
+
+function readMultipartFile(request: IncomingMessage, field: string, maxBytes: number): Promise<{ filename: string; mimeType: string; data: Buffer } | undefined> {
+  return new Promise((resolve, reject) => {
+    const parser = Busboy({ headers: request.headers, limits: { files: 1, fileSize: maxBytes } });
+    let found: { filename: string; mimeType: string; data: Buffer } | undefined;
+    parser.on("file", (_name, file, info) => {
+      if (_name !== field) { file.resume(); return; }
+      const chunks: Buffer[] = [];
+      let truncated = false;
+      file.on("limit", () => { truncated = true; });
+      file.on("data", (chunk: Buffer) => chunks.push(chunk));
+      file.on("close", () => {
+        if (truncated) reject(new Error("resume too large"));
+        else if (!found) found = { filename: info.filename, mimeType: info.mimeType, data: Buffer.concat(chunks) };
+      });
+    });
+    parser.on("finish", () => resolve(found));
+    parser.on("error", reject);
+    request.pipe(parser);
+  });
 }
 
 function publicResult(result: ResolverResult): Omit<ResolverResult, "screenshots"> {

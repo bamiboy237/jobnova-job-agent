@@ -7,6 +7,9 @@ import { collectEnvSecrets, safeError } from "../resolver/browserSafety.js";
 import { candidateProfileToCatalog } from "../apply/candidateCatalog.js";
 import { inspectCurrentPage } from "../apply/pageInspection.js";
 import { loadCandidateProfile } from "../apply/profile.js";
+import { loadResumeFacts, resumesDir } from "../apply/resumeFacts.js";
+import { resolveApprovedResume } from "../apply/resume.js";
+import type { FactValue } from "../apply/generalFacts.js";
 import { createRunLedger, type ApplicationRunLedger } from "../apply/runLedger.js";
 import { createCareerRuntime, type CareerMode, type CareerRuntimeState } from "./careerAgent.js";
 
@@ -145,6 +148,20 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
   };
   const catalog = loaded.ok ? deps.toCatalog(loaded.profile) : { facts: {}, reusableAnswers: {} };
   const runtime = deps.createRuntime(config, catalog, state, threadId);
+  const refreshResumeFacts = async (): Promise<void> => {
+    const facts = await loadResumeFacts();
+    const reloaded = await deps.loadProfile();
+    const base = reloaded.ok ? deps.toCatalog(reloaded.profile) : { facts: {}, reusableAnswers: {} as Record<string, FactValue> };
+    const writable = catalog.facts as Record<string, FactValue>;
+    for (const key of Object.keys(writable)) delete writable[key];
+    Object.assign(writable, facts, base.facts);
+    (catalog as { approvedResumeId?: string }).approvedResumeId =
+      base.approvedResumeId ?? (resolveApprovedResume("primary", resumesDir()).ok ? "primary" : undefined);
+  };
+  const runAfterRefresh = async function* (start: () => AsyncIterable<CareerEvent>): AsyncGenerator<CareerEvent> {
+    await refreshResumeFacts();
+    yield* start();
+  };
   const agent = runtime.mastra.getAgentById("career-agent");
   if (saved) {
     runtime.browsers.actionBrowser.setCurrentThread(threadId);
@@ -238,7 +255,7 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
   const sendMessage = (message: string): AsyncIterable<CareerEvent> => {
     const runId = deps.createId();
     for (const url of urlsIn(message)) state.allowedUrls.add(url);
-    return runTurn((abort) => agent.stream(message, streamOptions(runId, abort)), runId, "thinking");
+    return runAfterRefresh(() => runTurn((abort) => agent.stream(message, streamOptions(runId, abort)), runId, "thinking"));
   };
 
   const respond = (input: string | string[]): AsyncIterable<CareerEvent> => {
@@ -258,7 +275,7 @@ export async function createCareerSession(deps: CareerSessionDependencies = prod
       else if (normalized === "yes") resumeData = { approved: true };
       else resumeData = { approved: true, value: input as string };
     } else resumeData = { approved: normalized === "yes" };
-    return runTurn((abort) => agent.resumeStream(resumeData, { ...streamOptions(suspended.runId, abort), toolCallId: suspended.toolCallId }), suspended.runId, "resuming");
+    return runAfterRefresh(() => runTurn((abort) => agent.resumeStream(resumeData, { ...streamOptions(suspended.runId, abort), toolCallId: suspended.toolCallId }), suspended.runId, "resuming"));
   };
 
   const interrupt = () => {

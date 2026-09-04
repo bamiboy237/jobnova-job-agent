@@ -128,7 +128,81 @@ describe("Jobnova HTTP service", () => {
     const notFound = await fetch(`${baseUrl}/non-existent-page`);
     expect(notFound.status).toBe(404);
   });
+
+  it("accepts a resume PDF, saves it, and returns only fact keys", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "resume-upload-"));
+    const savedResumes = process.env.JOBNOVA_RESUMES_DIR;
+    const savedFacts = process.env.JOBNOVA_RESUME_FACTS_PATH;
+    process.env.JOBNOVA_RESUMES_DIR = path.join(dir, "resumes");
+    process.env.JOBNOVA_RESUME_FACTS_PATH = path.join(dir, "resume-facts.json");
+    try {
+      const server = await createJobnovaServer({ accessCode: "invite", databaseUrl: `file:${temporaryDatabase()}` });
+      const baseUrl = await listen(server);
+      const pdf = await testResumePdf("Avery Rivera", "avery.rivera@example.com");
+      const part = multipart(pdf, "resume", "resume.pdf", "application/pdf");
+
+      const denied = await fetch(`${baseUrl}/api/files`, { method: "POST", headers: { "content-type": part.contentType }, body: part.body });
+      expect(denied.status).toBe(401);
+
+      const uploaded = await fetch(`${baseUrl}/api/files`, {
+        method: "POST",
+        headers: { "x-access-code": "invite", "content-type": part.contentType },
+        body: part.body,
+      });
+      expect(uploaded.status).toBe(201);
+      const body = await uploaded.json() as { resumeId: string; factsAdded: string[] };
+      expect(body.resumeId).toBe("primary");
+      expect(body.factsAdded).toContain("email");
+      expect(JSON.stringify(body)).not.toContain("avery.rivera@example.com");
+      expect((await fs.stat(path.join(dir, "resumes", "primary.pdf"))).size).toBeGreaterThan(0);
+      expect(JSON.parse(await fs.readFile(path.join(dir, "resume-facts.json"), "utf8"))).toMatchObject({ email: "avery.rivera@example.com" });
+
+      const text = multipart(Buffer.from("hello"), "resume", "resume.txt", "text/plain");
+      const notPdf = await fetch(`${baseUrl}/api/files`, {
+        method: "POST",
+        headers: { "x-access-code": "invite", "content-type": text.contentType },
+        body: text.body,
+      });
+      expect(notPdf.status).toBe(400);
+
+      const big = multipart(Buffer.alloc(11 * 1024 * 1024, 65), "resume", "resume.pdf", "application/pdf");
+      const tooBig = await fetch(`${baseUrl}/api/files`, {
+        method: "POST",
+        headers: { "x-access-code": "invite", "content-type": big.contentType },
+        body: big.body,
+      });
+      expect(tooBig.status).toBe(413);
+    } finally {
+      if (savedResumes === undefined) delete process.env.JOBNOVA_RESUMES_DIR;
+      else process.env.JOBNOVA_RESUMES_DIR = savedResumes;
+      if (savedFacts === undefined) delete process.env.JOBNOVA_RESUME_FACTS_PATH;
+      else process.env.JOBNOVA_RESUME_FACTS_PATH = savedFacts;
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
 });
+
+function multipart(data: Buffer, field: string, filename: string, mimeType: string): { body: Buffer; contentType: string } {
+  const boundary = `boundary-${Date.now()}`;
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${field}"; filename="${filename}"\r\nContent-Type: ${mimeType}\r\n\r\n`),
+    data,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
+async function testResumePdf(name: string, email: string): Promise<Buffer> {
+  const PDFDocument = (await import("pdfkit")).default;
+  const doc = new PDFDocument({ size: "A4", margin: 50, info: { CreationDate: new Date("2026-01-01T00:00:00Z") } });
+  const chunks: Buffer[] = [];
+  doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+  doc.fontSize(18).text(name);
+  doc.fontSize(11).text(`Email: ${email}`);
+  doc.end();
+  await new Promise<void>((resolve) => doc.on("end", () => resolve()));
+  return Buffer.concat(chunks);
+}
 
 function temporaryDatabase(): string {
   const database = path.resolve(os.tmpdir(), `server-test-${crypto.randomUUID()}.db`);

@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { canUseApplicationTool, canUseBrowserMutation, canUseStagehand, findControlByIdentity, secureInputMetadata } from "../src/career/careerAgent.js";
 import { createCareerSession, parseCareerSessionState, serializeCareerSessionState, type CareerEvent, type CareerSessionDependencies } from "../src/career/careerSession.js";
 import { createRunLedger, recordCompletion } from "../src/apply/runLedger.js";
@@ -12,6 +15,7 @@ function setup() {
   const messages: string[] = []; const options: Array<{ runId: string; memory: { thread: string } }> = []; const resumes: unknown[] = [];
   let nextChunks: unknown[] = []; let nextError: Error | undefined;
   let capturedState: Parameters<CareerSessionDependencies["createRuntime"]>[2] | undefined;
+  let capturedCatalog: Parameters<CareerSessionDependencies["createRuntime"]>[1] | undefined;
   const agent = {
     stream: async (message: string, streamOptions: { runId: string; memory: { thread: string }; abortSignal: AbortSignal }) => {
       messages.push(message); options.push(streamOptions);
@@ -30,12 +34,12 @@ function setup() {
     getConfig: () => ({ agentModel: { id: "google/gemini-3.6-flash", apiKey: "key" }, browserModel: { modelName: "google/gemini-3.6-flash", apiKey: "key" }, label: "fake", secrets: ["key"] }),
     loadProfile: async () => ({ ok: true, profile: {} }),
     toCatalog: () => ({ facts: {}, reusableAnswers: {} }),
-    createRuntime: (_config: unknown, _catalog: unknown, state: typeof capturedState) => { runtimeCreates += 1; capturedState = state; return { mastra: { getAgentById: () => agent }, browsers: { close: async () => { closes += 1; } } }; },
+    createRuntime: (_config: unknown, _catalog: unknown, state: typeof capturedState) => { runtimeCreates += 1; capturedState = state; capturedCatalog = _catalog as typeof capturedCatalog; return { mastra: { getAgentById: () => agent }, browsers: { close: async () => { closes += 1; } } }; },
     createId: (() => { let id = 0; return () => `id-${++id}`; })(),
     loadSessionState: async () => { throw new Error("No saved test session"); },
     saveSessionState: async () => undefined,
   } as unknown as CareerSessionDependencies;
-  return { deps, messages, options, resumes, abortedRuns, setChunks: (chunks: unknown[]) => { nextChunks = chunks; }, setError: (error: Error) => { nextError = error; }, counts: () => ({ runtimeCreates, closes, interrupts }), state: () => capturedState! };
+  return { deps, messages, options, resumes, abortedRuns, setChunks: (chunks: unknown[]) => { nextChunks = chunks; }, setError: (error: Error) => { nextError = error; }, counts: () => ({ runtimeCreates, closes, interrupts }), state: () => capturedState!, catalog: () => capturedCatalog as { facts: Record<string, unknown> } };
 }
 
 async function collect(events: AsyncIterable<CareerEvent>): Promise<CareerEvent[]> {
@@ -180,6 +184,24 @@ describe("conversational career session", () => {
     const repeated = await collect(submissionSession.respond("yes"));
     expect(repeated).toContainEqual({ type: "error", error: "The agent is not waiting for input" });
     await submissionSession.close();
+  });
+
+  it("merges uploaded resume facts into the live catalog on each turn", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "resume-facts-"));
+    const savedPath = process.env.JOBNOVA_RESUME_FACTS_PATH;
+    process.env.JOBNOVA_RESUME_FACTS_PATH = path.join(dir, "resume-facts.json");
+    try {
+      const fixture = setup();
+      const session = await createCareerSession(fixture.deps);
+      expect(fixture.catalog().facts.email).toBeUndefined();
+      await fs.writeFile(process.env.JOBNOVA_RESUME_FACTS_PATH, JSON.stringify({ email: "jordan@example.com" }));
+      await collect(session.sendMessage("hey"));
+      expect(fixture.catalog().facts.email).toBe("jordan@example.com");
+      await session.close();
+    } finally {
+      if (savedPath === undefined) delete process.env.JOBNOVA_RESUME_FACTS_PATH;
+      else process.env.JOBNOVA_RESUME_FACTS_PATH = savedPath;
+    }
   });
 
   it("closes browser resources when a career turn fails", async () => {
