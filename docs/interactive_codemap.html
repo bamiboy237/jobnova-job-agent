@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jobnova codemap</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-subtle: #f8fafc;
+      --bg-card: #ffffff;
+      --border: #e2e8f0;
+      --border-focus: #0f172a;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --code-bg: #f1f5f9;
+      --accent: #0f172a;
+      --accent-text: #ffffff;
+      --tag-bg: #e2e8f0;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg: #090d16;
+      --bg-subtle: #0f172a;
+      --bg-card: #131d33;
+      --border: #1e293b;
+      --border-focus: #f8fafc;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --code-bg: #1e293b;
+      --accent: #f8fafc;
+      --accent-text: #090d16;
+      --tag-bg: #1e293b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Layout */
+    .app-layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+
+    /* Sidebar Navigation */
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      background-color: var(--bg-subtle);
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 0 8px;
+    }
+
+    .brand-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .search-box {
+      position: relative;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--border-focus);
+    }
+
+    .nav-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      padding: 6px 8px;
+      margin-top: 4px;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-radius: 5px;
+      transition: all 0.1s ease;
+    }
+
+    .nav-link:hover {
+      background-color: var(--border);
+      color: var(--text);
+    }
+
+    .nav-link.active {
+      background-color: var(--text);
+      color: var(--bg);
+      font-weight: 600;
+    }
+
+    .nav-pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background-color: var(--tag-bg);
+      color: var(--text-muted);
+    }
+
+    .nav-link.active .nav-pill {
+      background-color: var(--bg);
+      color: var(--text);
+    }
+
+    /* Main Content */
+    .main-content {
+      padding: 40px 56px 120px;
+      max-width: 980px;
+    }
+
+    header.doc-header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .title-block h1 {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+
+    .title-block p {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .theme-toggle-btn {
+      padding: 5px 10px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      background-color: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .theme-toggle-btn:hover {
+      border-color: var(--text);
+    }
+
+    /* Sections */
+    section.doc-section {
+      margin-bottom: 48px;
+      scroll-margin-top: 40px;
+    }
+
+    h2.section-heading {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 14px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3.sub-heading {
+      font-size: 14px;
+      font-weight: 600;
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+
+    p {
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    /* Code and Blocks */
+    pre, code {
+      font-family: var(--font-mono);
+    }
+
+    code.inline-code {
+      font-size: 12px;
+      background-color: var(--code-bg);
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: var(--text);
+    }
+
+    pre.code-block {
+      background-color: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: auto;
+      margin: 12px 0;
+      color: var(--text);
+    }
+
+    /* Tables */
+    table.spec-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 12.5px;
+    }
+
+    table.spec-table th,
+    table.spec-table td {
+      padding: 9px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    table.spec-table th {
+      background-color: var(--bg-subtle);
+      font-weight: 600;
+      color: var(--text);
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    table.spec-table td strong {
+      color: var(--text);
+    }
+
+    /* Interactive Component Cards */
+    .component-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .component-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+
+    .component-card:hover {
+      border-color: var(--text);
+      transform: translateY(-1px);
+    }
+
+    .component-card.selected {
+      border-color: var(--text);
+      background-color: var(--bg-subtle);
+    }
+
+    .component-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .component-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .component-files-count {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--text-dim);
+    }
+
+    .component-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    /* Detail Inspector Drawer */
+    .inspector-panel {
+      margin-top: 14px;
+      padding: 18px;
+      background-color: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: none;
+    }
+
+    .inspector-panel.visible {
+      display: block;
+    }
+
+    /* Lists */
+    ul.bullet-list, ol.num-list {
+      margin: 10px 0 14px 20px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    ul.bullet-list li, ol.num-list li {
+      margin-bottom: 6px;
+    }
+
+    ul.bullet-list li strong, ol.num-list li strong {
+      color: var(--text);
+    }
+
+    /* Flow diagram */
+    .flow-diagram {
+      margin: 16px 0;
+      padding: 16px;
+      background-color: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+
+    .flow-diagram svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      min-width: 560px;
+    }
+
+    .flow-box { fill: var(--bg-card); stroke: var(--border); }
+    .flow-text { fill: var(--text); font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+    .flow-sub { fill: var(--text-muted); font-family: var(--font-mono); font-size: 10px; }
+    .flow-arrow { stroke: var(--text-dim); stroke-width: 1.5; fill: none; }
+    .flow-dash { stroke: var(--text-dim); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+
+    /* Responsive */
+    @media (max-width: 860px) {
+      .app-layout {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        display: none;
+      }
+      .main-content {
+        padding: 24px 20px 80px;
+        min-width: 0;
+      }
+      header.doc-header {
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      p, li, td, th {
+        overflow-wrap: anywhere;
+      }
+      table.spec-table {
+        display: block;
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body data-theme="light">
+
+  <div class="app-layout">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-title">JOBNOVA CODEMAP</div>
+        <div class="brand-subtitle">What the code does and where it lives</div>
+      </div>
+
+      <div class="search-box">
+        <input type="text" id="docSearch" class="search-input" placeholder="Filter sections and modules..." onkeyup="filterDocs()" />
+      </div>
+
+      <nav class="nav-group">
+        <div class="nav-group-title">Orientation</div>
+        <a href="#overview" class="nav-link active" onclick="setActiveNav(this)">
+          <span>Overview</span>
+        </a>
+        <a href="#architecture" class="nav-link" onclick="setActiveNav(this)">
+          <span>How it works</span>
+        </a>
+        <a href="#entrypoints" class="nav-link" onclick="setActiveNav(this)">
+          <span>Run</span>
+        </a>
+
+        <div class="nav-group-title">Modules</div>
+        <a href="#modules" class="nav-link" onclick="setActiveNav(this)">
+          <span>Module cards</span>
+        </a>
+        <a href="#filetree" class="nav-link" onclick="setActiveNav(this)">
+          <span>File tree</span>
+        </a>
+        <a href="#modfeatures" class="nav-link" onclick="setActiveNav(this)">
+          <span>Modules to features</span>
+        </a>
+
+        <div class="nav-group-title">Features & Rules</div>
+        <a href="#features" class="nav-link" onclick="setActiveNav(this)">
+          <span>Features</span>
+        </a>
+        <a href="#invariants" class="nav-link" onclick="setActiveNav(this)">
+          <span>Rules</span>
+        </a>
+        <a href="#workflows" class="nav-link" onclick="setActiveNav(this)">
+          <span>Commands</span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+
+      <!-- Header -->
+      <header class="doc-header">
+        <div class="title-block">
+          <h1>Jobnova codemap</h1>
+          <p>What the code does and where it lives.</p>
+        </div>
+        <button class="theme-toggle-btn" onclick="toggleTheme()" id="themeBtn">Switch to Dark Theme</button>
+      </header>
+
+      <!-- 1. System Overview -->
+      <section id="overview" class="doc-section">
+        <h2 class="section-heading">1 · Overview</h2>
+        <p>
+          Jobnova resolves LinkedIn job posts to employer application pages and fills the forms with human approval. Start it with <code>npm run serve</code>, then open <code>http://localhost:3000</code>.
+        </p>
+      </section>
+
+      <!-- 2. How it works -->
+      <section id="architecture" class="doc-section">
+        <h2 class="section-heading">2 · How it works</h2>
+        <p>
+          Jobnova has three parts:
+        </p>
+        <ul class="bullet-list">
+          <li><strong>Resolver</strong> (<code>src/resolver/</code>): turns a LinkedIn job URL into an employer or ATS application URL.</li>
+          <li><strong>Form engine</strong> (<code>src/apply/</code>): reads the application form, fills fields from the candidate profile, and stops for human approval before it submits.</li>
+          <li><strong>Career chat</strong> (<code>src/career/</code>, <code>web/</code>): talks through roles and drives the resolver and form engine over chat.</li>
+        </ul>
+        <p>
+          One Node 22 process serves the API and the chat UI (<code>src/server.ts</code>). The agents drive browsers on Browserbase or local Chrome (<code>src/browser/</code>). At most two browsers stay live; an idle one closes after 10 minutes.
+        </p>
+        <p>
+          The model never touches values directly. It plans with <code>@ref</code> handles and fact keys; TypeScript binds the real values in memory.
+        </p>
+      </section>
+
+      <!-- 3. Run -->
+      <section id="entrypoints" class="doc-section">
+        <h2 class="section-heading">3 · Run</h2>
+
+        <table class="spec-table">
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>File</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>npm run serve</code></td>
+              <td><code>src/server.ts</code></td>
+              <td>Starts the server on <code>PORT</code> (default 3000). Serves <code>/api/runs</code>, <code>/api/chat</code>, SSE streams, and the static files in <code>web/out/</code>.</td>
+            </tr>
+            <tr>
+              <td><code>npm run resolve -- &lt;linkedin-url&gt;</code></td>
+              <td><code>src/index.ts</code></td>
+              <td>Resolves one LinkedIn URL and prints the result as JSON.</td>
+            </tr>
+            <tr>
+              <td><code>npm run apply:chat</code></td>
+              <td><code>src/apply/chatCli.ts</code></td>
+              <td>Career chat in the terminal.</td>
+            </tr>
+            <tr>
+              <td><code>npm run apply:test -- --url &lt;lever-url&gt;</code></td>
+              <td><code>src/apply/cli.ts</code></td>
+              <td>Fills a form without submitting. Prefix with <code>BROWSER_PROVIDER=local</code> for a local browser.</td>
+            </tr>
+            <tr>
+              <td><code>npm run apply:submit -- --url &lt;lever-url&gt;</code></td>
+              <td><code>src/apply/cli.ts</code></td>
+              <td>Fills and submits once, with approval.</td>
+            </tr>
+            <tr>
+              <td><code>npm run auth</code></td>
+              <td><code>src/auth.ts</code></td>
+              <td>Logs in to LinkedIn and saves the session.</td>
+            </tr>
+            <tr>
+              <td><code>npm run profile:synthetic</code></td>
+              <td><code>src/apply/generateSyntheticProfile.ts</code></td>
+              <td>Replaces the candidate profile with synthetic test data.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 4. Interactive Module Directory Map -->
+      <section id="modules" class="doc-section">
+        <h2 class="section-heading">4 · Modules</h2>
+        <p>
+          Select a module to list its major files. The tree below shows where everything lives.
+        </p>
+
+        <div class="component-grid">
+          <div class="component-card" onclick="selectComponent('resolver', this)">
+            <div class="component-header">
+              <span class="component-title">src/resolver/</span>
+              <span class="component-files-count">3 files</span>
+            </div>
+            <div class="component-desc">
+              LinkedIn URL to application URL. DOM links first, Stagehand only when the page is ambiguous.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('apply', this)">
+            <div class="component-header">
+              <span class="component-title">src/apply/</span>
+              <span class="component-files-count">19 files</span>
+            </div>
+            <div class="component-desc">
+              Form filling. Reads controls, fills from the candidate profile, audits, and asks before it submits.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('career', this)">
+            <div class="component-header">
+              <span class="component-title">src/career/</span>
+              <span class="component-files-count">2 files</span>
+            </div>
+            <div class="component-desc">
+              Chat agent and sessions. Opens job URLs, fills forms, asks for missing values.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('mastra', this)">
+            <div class="component-header">
+              <span class="component-title">src/mastra/</span>
+              <span class="component-files-count">6 files</span>
+            </div>
+            <div class="component-desc">
+              Agent runtime. Models, thread storage, retries, and history compaction.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('browser', this)">
+            <div class="component-header">
+              <span class="component-title">src/browser/</span>
+              <span class="component-files-count">2 files</span>
+            </div>
+            <div class="component-desc">
+              Browsers. Remote Browserbase sessions and local Chrome over CDP.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('server', this)">
+            <div class="component-header">
+              <span class="component-title">Server & types</span>
+              <span class="component-files-count">3 files</span>
+            </div>
+            <div class="component-desc">
+              HTTP server, resolver-run table, and shared schemas.
+            </div>
+          </div>
+
+          <div class="component-card" onclick="selectComponent('web', this)">
+            <div class="component-header">
+              <span class="component-title">web/</span>
+              <span class="component-files-count">3 files</span>
+            </div>
+            <div class="component-desc">
+              Chat UI. Chat window, invite-code gate, and SSE transport.
+            </div>
+          </div>
+        </div>
+
+        <!-- Dynamic Inspector Panel -->
+        <div id="inspectorPanel" class="inspector-panel">
+          <h3 id="inspectorTitle" class="sub-heading" style="margin-top:0;">Module Details</h3>
+          <p id="inspectorDescription"></p>
+          <div id="inspectorContent"></div>
+        </div>
+      </section>
+
+      <!-- File tree -->
+      <section id="filetree" class="doc-section">
+        <h2 class="section-heading">File tree</h2>
+        <pre class="code-block">
+src/
+├── server.ts                  # routes, SSE, web/out/, access gate
+├── server/runStore.ts         # resolver-run table
+├── index.ts                   # npm run resolve
+├── auth.ts                    # npm run auth
+├── types.ts                   # ResolverResult, ApplicationResult
+├── resolver/                  # LinkedIn URL → application URL (3 files)
+├── apply/                     # form engine (19 files)
+├── career/                    # chat agent, sessions (2 files)
+├── mastra/                    # models, storage, retries (6 files)
+└── browser/                   # Browserbase + local Chrome (2 files)
+web/
+├── app/page.tsx               # chat, access gate, drawer, cards
+└── lib/jobnova-transport.ts   # SSE → chat parts
+        </pre>
+      </section>
+
+      <!-- Modules to features -->
+      <section id="modfeatures" class="doc-section">
+        <h2 class="section-heading">Modules to features</h2>
+        <table class="spec-table">
+          <thead>
+            <tr><th>Module</th><th>Serves</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>src/resolver/</code></td>
+              <td>Resolve a post, in the drawer or via <code>npm run resolve</code>.</td>
+            </tr>
+            <tr>
+              <td><code>src/apply/</code></td>
+              <td>Fill a form, ask for missing values, audit, submit.</td>
+            </tr>
+            <tr>
+              <td><code>src/career/</code></td>
+              <td>Chat, sessions, idle browser release.</td>
+            </tr>
+            <tr>
+              <td><code>src/mastra/</code></td>
+              <td>Model choice, thread memory, 429 retries, history trim on every agent turn.</td>
+            </tr>
+            <tr>
+              <td><code>src/browser/</code></td>
+              <td>LinkedIn login, remote and local browsers.</td>
+            </tr>
+            <tr>
+              <td><code>src/server.ts</code>, <code>src/server/runStore.ts</code>, <code>src/types.ts</code></td>
+              <td>Routes, SSE streams, run history, access gate.</td>
+            </tr>
+            <tr>
+              <td><code>web/</code></td>
+              <td>Chat window, resolve drawer, input cards.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Per-module file lists live in the inspector above; the tree and feature map cover the rest. -->
+
+      <!-- 5. Features -->
+      <section id="features" class="doc-section">
+        <h2 class="section-heading">5 · Features</h2>
+        <p>
+          Each feature, and the modules behind it:
+        </p>
+
+        <h3 class="sub-heading">Resolve a LinkedIn post</h3>
+        <p>
+          <code>ResolverCard</code> posts the URL to <code>POST /api/runs</code>. <code>RunStore</code> records <code>queued</code> → <code>running</code>. <code>resolveDirectLinkedInJob()</code> reads the page for an external apply link, Stagehand helps only when the DOM is ambiguous, and <code>validateDestination()</code> accepts only HTTPS URLs that leave LinkedIn and match the role. The run ends <code>completed</code> or <code>failed</code>.
+        </p>
+
+        <h3 class="sub-heading">Talk through a role</h3>
+        <p>
+          <code>ChatWorkspace</code> sends messages through <code>JobnovaTransport</code> to <code>POST /api/chat/:id/message</code>. <code>CareerSession</code> runs the <code>createCareerRuntime()</code> agent, which opens your URL (<code>open_supplied_job</code>) and locks onto forms (<code>enter_application_mode</code>). <code>compactSupersededSnapshots()</code> trims old DOM dumps; <code>getMastraStorage()</code> keeps threads across restarts.
+        </p>
+
+        <h3 class="sub-heading">Fill a form</h3>
+        <p>
+          <code>inspectCurrentPage()</code> lists controls as <code>@ref</code> handles. <code>execute_application_actions</code> fills up to 20 controls a turn from the <code>candidateProfileToCatalog()</code> facts. <code>createRunLedger()</code> keeps each field filling once. The model sees handles and keys, never values.
+        </p>
+
+        <h3 class="sub-heading">Ask for missing values</h3>
+        <p>
+          <code>request_user_inputs</code> pauses the turn and shows one <code>InteractionCard</code>. Your answers resume the turn.
+        </p>
+
+        <h3 class="sub-heading">Approve and submit</h3>
+        <p>
+          <code>finalAudit()</code> checks the form, <code>captureFullPageScreenshot()</code> saves the page, and <code>request_submission</code> asks you to confirm. One click submits once. No retries.
+        </p>
+      </section>
+
+      <!-- 6. Rules -->
+      <section id="invariants" class="doc-section">
+        <h2 class="section-heading">6 · Rules</h2>
+        <table class="spec-table">
+          <thead>
+            <tr><th>Rule</th><th>Where</th><th>What it means</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>The model never sees values</strong></td>
+              <td><code>src/apply/generalBrowserTools.ts</code></td>
+              <td>Prompts carry <code>@ref</code> handles and fact keys. TypeScript binds values in memory.</td>
+            </tr>
+            <tr>
+              <td><strong>Nothing submits without you</strong></td>
+              <td><code>src/apply/generalSafety.ts</code></td>
+              <td>No retries on the submit click. Each run needs a fresh audit, a screenshot, and your confirmation.</td>
+            </tr>
+            <tr>
+              <td><strong>Destinations stay outside LinkedIn</strong></td>
+              <td><code>src/resolver/validateDestination.ts</code></td>
+              <td>HTTPS only. No login walls or search pages.</td>
+            </tr>
+            <tr>
+              <td><strong>Two browsers at most</strong></td>
+              <td><code>src/server.ts</code></td>
+              <td>Idle browsers close after 10 minutes.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 7. Commands -->
+      <section id="workflows" class="doc-section">
+        <h2 class="section-heading">7 · Commands</h2>
+
+        <h3 class="sub-heading">Setup</h3>
+        <pre class="code-block">
+npm install
+npm run build
+npm test
+npm run serve
+        </pre>
+
+        <h3 class="sub-heading">Tasks</h3>
+        <table class="spec-table">
+          <thead>
+            <tr><th>Goal</th><th>Command</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Resolve LinkedIn URL via CLI</td>
+              <td><code>npm run resolve -- &lt;linkedin-url&gt;</code></td>
+            </tr>
+            <tr>
+              <td>Interactive terminal career chat</td>
+              <td><code>npm run apply:chat</code></td>
+            </tr>
+            <tr>
+              <td>Authenticate LinkedIn session</td>
+              <td><code>npm run auth</code></td>
+            </tr>
+            <tr>
+              <td>Generate synthetic test profile</td>
+              <td><code>npm run profile:synthetic</code></td>
+            </tr>
+            <tr>
+              <td>Fill a Lever form without submitting</td>
+              <td><code>BROWSER_PROVIDER=local npm run apply:test -- --url &lt;lever-url&gt;</code></td>
+            </tr>
+            <tr>
+              <td>Fill and submit once, with approval</td>
+              <td><code>npm run apply:submit -- --url &lt;lever-url&gt;</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+    </main>
+
+  </div>
+
+  <script>
+    // Module Data for Interactive Inspector
+    const moduleDetails = {
+      resolver: {
+        title: "src/resolver/ — LinkedIn URL to application URL",
+        desc: "Reads apply links from the page DOM. Uses Stagehand only when the page is ambiguous.",
+        files: [
+          "directResolver.ts: resolveDirectLinkedInJob() reads DOM links first.",
+          "validateDestination.ts: Accepts only HTTPS URLs outside LinkedIn that match the role.",
+          "browserSafety.ts: Strips keys and secrets from errors and logs."
+        ]
+      },
+      apply: {
+        title: "src/apply/ — form filling (19 files)",
+        desc: "Reads controls, fills from the candidate profile, audits, and asks before it submits.",
+        files: [
+          "generalBrowserTools.ts: Guarded tools; batches up to 20 DOM writes per turn.",
+          "candidateCatalog.ts: Turns profile.json into the fact catalog the tools read.",
+          "pageInspection.ts: Lists form controls with @ref handles.",
+          "pageState.ts: Types and classifiers for page state.",
+          "runLedger.ts: Records filled fields so none fills twice.",
+          "generalFacts.ts: Allow-list of fact keys the model may request.",
+          "generalSafety.ts: Pre-submit audit; finds the submit control.",
+          "applicationArtifacts.ts: Saves the pre-submit screenshot.",
+          "applyJob.ts: Runs one fill: inspect, fill, audit, submit on approval.",
+          "applyLever.ts: Runs the authorized Lever proof application.",
+          "resume.ts: Finds the approved resume PDF for upload.",
+          "cli.ts: Form CLI — fill without submitting, or fill and submit once."
+        ]
+      },
+      career: {
+        title: "src/career/ — chat agent and sessions",
+        desc: "Opens job URLs, fills forms, and asks for missing values over chat.",
+        files: [
+          "careerAgent.ts: The chat agent — open_supplied_job, request_user_inputs, request_submission.",
+          "careerSession.ts: One session — Mastra thread, browser slot, 10-minute idle timer."
+        ]
+      },
+      mastra: {
+        title: "src/mastra/ — agent runtime (6 files)",
+        desc: "Models, thread storage, retries, and history compaction.",
+        files: [
+          "compactSnapshots.ts: Replaces old DOM dumps in history with tombstones.",
+          "model.ts: Picks the provider from LLM_PROVIDER (Gemini by default).",
+          "storage.ts: LibSQL store keeps thread history across restarts.",
+          "rateLimitRetry.ts: Backs off and retries on HTTP 429.",
+          "resolverAgent.ts: The resolver agent for one-shot URL resolution.",
+          "resolverBrowser.ts: Browser pair for a resolver run."
+        ]
+      },
+      browser: {
+        title: "src/browser/ — browsers",
+        desc: "Remote Browserbase sessions and local Chrome over CDP.",
+        files: [
+          "cdpSession.ts: CdpSession — connect() and release().",
+          "session.ts: Opens Browserbase or local sessions with the saved LinkedIn context."
+        ]
+      },
+      server: {
+        title: "Server & shared types",
+        desc: "HTTP server, resolver-run table, and shared schemas.",
+        files: [
+          "src/server.ts: Routes, SSE streams, web/out/ files, x-access-code gate.",
+          "src/server/runStore.ts: SQLite table — queued, running, completed, failed.",
+          "src/types.ts: ResolverResult and ApplicationResult schemas."
+        ]
+      },
+      web: {
+        title: "web/ — chat UI",
+        desc: "Chat window, invite-code gate, and SSE transport.",
+        files: [
+          "web/app/page.tsx: ChatWorkspace, AccessGate, quick-resolve drawer, input cards.",
+          "web/lib/jobnova-transport.ts: Turns SSE events into chat message parts.",
+          "web/next.config.ts: Static export into web/out/."
+        ]
+      }
+    };
+
+    function selectComponent(key, el) {
+      document.querySelectorAll('.component-card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+
+      const data = moduleDetails[key];
+      if (!data) return;
+
+      const panel = document.getElementById('inspectorPanel');
+      document.getElementById('inspectorTitle').innerText = data.title;
+      document.getElementById('inspectorDescription').innerText = data.desc;
+      
+      let html = '<ul class="bullet-list" style="margin-top:8px;">';
+      data.files.forEach(f => {
+        const parts = f.split(':');
+        html += `<li><code>${parts[0]}</code>: ${parts[1]}</li>`;
+      });
+      html += '</ul>';
+      document.getElementById('inspectorContent').innerHTML = html;
+      panel.classList.add('visible');
+    }
+
+    function setActiveNav(el) {
+      document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+      el.classList.add('active');
+    }
+
+    function toggleTheme() {
+      const current = document.body.getAttribute('data-theme') || 'light';
+      const next = current === 'light' ? 'dark' : 'light';
+      document.body.setAttribute('data-theme', next);
+      document.getElementById('themeBtn').innerText = next === 'light' ? 'Switch to Dark Theme' : 'Switch to Light Theme';
+    }
+
+    function filterDocs() {
+      const query = document.getElementById('docSearch').value.toLowerCase();
+      document.querySelectorAll('.nav-link').forEach(link => {
+        const text = link.innerText.toLowerCase();
+        link.style.display = text.includes(query) ? 'flex' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>
