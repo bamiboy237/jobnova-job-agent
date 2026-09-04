@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
@@ -106,10 +107,31 @@ describe("Jobnova HTTP service", () => {
     expect(ended.status).toBe(200);
     expect(closed).toBe(true);
   });
+
+  it("serves static assets and responds to Railway HEAD / healthchecks", async () => {
+    const server = await createJobnovaServer({
+      accessCode: "invite",
+      databaseUrl: `file:${temporaryDatabase()}`,
+    });
+    const baseUrl = await listen(server);
+
+    const headResponse = await fetch(`${baseUrl}/`, { method: "HEAD" });
+    expect(headResponse.status).toBe(200);
+    expect(headResponse.headers.get("content-type")).toContain("text/html");
+
+    const getResponse = await fetch(`${baseUrl}/`);
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.headers.get("content-type")).toContain("text/html");
+    const html = await getResponse.text();
+    expect(html).toContain("Jobnova");
+
+    const notFound = await fetch(`${baseUrl}/non-existent-page`);
+    expect(notFound.status).toBe(404);
+  });
 });
 
 function temporaryDatabase(): string {
-  const database = path.resolve(process.cwd(), `.server-test-${crypto.randomUUID()}.db`);
+  const database = path.resolve(os.tmpdir(), `server-test-${crypto.randomUUID()}.db`);
   databases.push(database);
   return database;
 }

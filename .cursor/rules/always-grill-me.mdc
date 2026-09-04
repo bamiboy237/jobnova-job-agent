@@ -1,0 +1,11 @@
+---
+description: Always grill the user with interactive questions to align on requirements before taking action
+alwaysApply: true
+---
+
+# Interactive Alignment (Always Grill Me)
+
+- Always interrogate and align with the user before writing code, creating documentation, or altering system architecture.
+- Never guess requirements or create speculative files without explicit confirmation.
+- Use `ask_question` to present clear, structured options for design decisions, file formats, and scope.
+- Confirm exactly what to build, modify, or delete before executing changes.
